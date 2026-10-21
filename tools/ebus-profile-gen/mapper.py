@@ -18,63 +18,64 @@ TYPE_MAP: Dict[str, str] = {
     # 1 byte types
     "UCH": "UINT8",
     "SCH": "INT8",
-    "D1B": "INT8",
-    "D1C": "UINT8",
-    "BCD": "UINT8",
-    "HCD": "UINT8",
+    "D1B": "DATA1B",   # 1-byte signed fixed-point (ebus::DataType::data1b)
+    "D1C": "DATA1C",   # 1-byte unsigned fixed-point /2 (ebus::DataType::data1c)
+    "BCD": "BCD",
+    "HCD": "UINT8",    # 1-byte HCD: no native library type, treat as raw UINT8
     "BI0": "UINT8", "BI1": "UINT8", "BI2": "UINT8", "BI3": "UINT8",
     "BI4": "UINT8", "BI5": "UINT8", "BI6": "UINT8", "BI7": "UINT8",
     "BI0_6": "UINT8", "BI0_7": "UINT8",
     "U1L": "UINT8",
-    "D1C": "UINT8",
+    "S1L": "INT8",
     "INT8": "INT8",
     "UINT8": "UINT8",
     # 2 byte types
-    "PIN": "UINT16",
+    "PIN": "UINT16",   # 2-byte BCD reversed; no native PIN type, raw UINT16
     "UIN": "UINT16",
-    "UIR": "UINT16",
+    "UIR": "UINT16R",
     "U2L": "UINT16",
-    "U2B": "UINT16",
+    "U2B": "UINT16R",
     "SIN": "INT16",
-    "SIR": "INT16",
+    "SIR": "INT16R",
     "S2L": "INT16",
-    "S2B": "INT16",
-    "BCD2": "UINT16",
-    "HCD2": "UINT16",
-    "D2B": "INT16",
-    "D2C": "INT16",
-    "FLT": "INT16",
-    "FLR": "INT16",
+    "S2B": "INT16R",
+    "BCD2": "UINT16",  # 2-byte BCD; no native type, raw UINT16
+    "HCD2": "UINT16",  # 2-byte HCD; no native type, raw UINT16
+    "D2B": "DATA2B",   # 2-byte signed fixed-point /256 (ebus::DataType::data2b)
+    "D2C": "DATA2C",   # 2-byte signed fixed-point /16 (ebus::DataType::data2c)
+    "FLT": "INT16",    # 2-byte /1000 — INT16; no dedicated FLT type
+    "FLR": "INT16R",   # same, big-endian
     "INT16": "INT16",
     "UINT16": "UINT16",
-    # 3 byte types
-    "BCD3": "UINT32",
-    "HCD3": "UINT32",
-    "U3N": "UINT32",
-    "U3R": "UINT32",
-    "U3L": "UINT32",
-    "U3B": "UINT32",
-    "S3N": "INT32",
-    "S3R": "INT32",
-    "S3L": "INT32",
-    "S3B": "INT32",
+    # 3 byte types — library has no 3-byte numeric; map to raw CHAR3
+    "BCD3": "CHAR3",   # 3-byte BCD (cntstarts, cnthours): no native type yet
+    "HCD3": "CHAR3",   # 3-byte HCD: no native type yet
+    "U3N": "CHAR3",
+    "U3R": "CHAR3",
+    "U3L": "CHAR3",
+    "U3B": "CHAR3",
+    "S3N": "CHAR3",
+    "S3R": "CHAR3",
+    "S3L": "CHAR3",
+    "S3B": "CHAR3",
     "INT32": "INT32",
     "UINT32": "UINT32",
     # 4 byte types
     "ULG": "UINT32",
-    "ULR": "UINT32",
+    "ULR": "UINT32R",
     "U4L": "UINT32",
-    "U4B": "UINT32",
+    "U4B": "UINT32R",
     "SLG": "INT32",
-    "SLR": "INT32",
+    "SLR": "INT32R",
     "S4L": "INT32",
-    "S4B": "INT32",
-    "BCD4": "UINT32",
+    "S4B": "INT32R",
+    "BCD4": "UINT32",  # 4-byte BCD/HCD: no native type, raw UINT32
     "HCD4": "UINT32",
     "EXP": "FLOAT4",
-    "EXR": "FLOAT4",
+    "EXR": "FLOAT4R",
     "FLOAT4": "FLOAT4",
-    # String types
+    "FLOAT4R": "FLOAT4R",
+    # String types — @maxLength handled by _map_type(); fallback CHAR1/HEX1
     "STR": "CHAR1",
     "NTS": "CHAR1",
     "IGN": "CHAR1",
@@ -95,14 +96,29 @@ TYPE_MAP: Dict[str, str] = {
     "HEX6": "HEX6",
     "HEX7": "HEX7",
     "HEX8": "HEX8",
-    # Boolean/bit
+    # Boolean/bit — no native BOOL DataType; boolean → UINT8
     "boolean": "UINT8",
     "BOOL": "UINT8",
-    # Date/time types (map to their byte sizes)
-    "BTI": "UINT16",  # 2-byte time
-    "BDA": "UINT16",  # 3-byte date, but we'll use UINT16 as placeholder
-    "BDY": "UINT8",   # 1-byte weekday
-    "BDT": "UINT8",   # 1-byte date variant
+    # Date/time types — no native semantic DataType; store as raw bytes
+    "BTI": "CHAR3",    # 3-byte BCD time (seconds-first, reversed)
+    "HTI": "CHAR3",    # 3-byte decimal time
+    "VTI": "CHAR3",    # 3-byte decimal time [Vaillant]
+    "BTM": "UINT16",   # 2-byte BCD time hh:mm
+    "HTM": "UINT16",   # 2-byte decimal time hh:mm
+    "VTM": "UINT16R",  # 2-byte decimal time hh:mm [Vaillant, reversed]
+    "MIN": "UINT16",   # 2-byte minutes since midnight
+    "TTM": "UINT8",    # 1-byte truncated time (/10 min)
+    "TTH": "UINT8",    # 6-bit truncated time (/30 min)
+    "TTQ": "UINT8",    # 7-bit truncated time (/15 min)
+    "BDA": "CHAR4",    # 4-byte BCD date with weekday
+    "HDA": "CHAR4",    # 4-byte decimal date with weekday
+    "BDA3": "CHAR3",   # 3-byte BCD date
+    "HDA3": "CHAR3",   # 3-byte decimal date
+    "BDZ": "CHAR4",    # 4-byte BCD date with zero-based weekday
+    "DAY": "UINT16",   # 2-byte days since 1900-01-01
+    "DTM": "UINT32",   # 4-byte minutes since 2009-01-01
+    "BDY": "UINT8",    # 1-byte weekday (Mon=0)
+    "HDY": "UINT8",    # 1-byte weekday [Vaillant] (Mon=1)
 }
 
 # Byte size per ebus-library DataType name (matches ebus::DataType enum high byte).
@@ -131,9 +147,10 @@ DATATYPE_SIZE: Dict[str, int] = {
 
 # ebus-library native DataTypes it can actually decode/encode.
 # Anything not in this set cannot be turned into a data profile.
+# Source of truth: ebus::DataType enum in include/ebus/data_types.hpp.
 SUPPORTED_DATATYPES: set = {
     # 1 byte
-    "BCD", "UINT8", "INT8", "DATA1B", "DATA1C", "CHAR1", "HEX1",
+    "BCD", "UINT8", "INT8", "DATA1B", "DATA1C", "BOOL", "CHAR1", "HEX1",
     # 2 bytes
     "UINT16", "UINT16R", "INT16", "INT16R", "DATA2B", "DATA2BR",
     "DATA2C", "DATA2CR", "CHAR2", "HEX2",
@@ -150,16 +167,18 @@ SUPPORTED_DATATYPES: set = {
 # These are from _templates.tsp and device-specific includes
 SCALAR_TYPE_MAP: Dict[str, str] = {
     # Counter types
-    "cntstarts": "UINT32",      # BCD3 -> 3 bytes
-    "cntminutes": "UINT8",      # BCD -> 1 byte
-    "cnthours": "UINT32",       # BCD3 -> 3 bytes
-    "cntfuel": "UINT32",        # BCD4 -> 4 bytes
+    "cntstarts": "CHAR3",      # BCD3 -> 3-byte raw (no native BCD3 DataType yet)
+    "cntstarts2": "UINT16",    # UIN -> 2-byte unsigned
+    "cntminutes": "BCD",       # BCD -> 1 byte
+    "cnthours": "CHAR3",       # BCD3 -> 3 bytes
+    "cntfuel": "UINT32",       # BCD4 -> 4 bytes
     # Temperature types
     "temp": "DATA2C",           # D2C -> 2-byte signed with special handling
     "temp0": "UINT8",          # UCH -> 1 byte unsigned
     "temp1": "DATA1C",         # D1C -> 1-byte signed with special handling
     "temp2": "DATA2B",         # D2B -> 2-byte signed with special handling
     "tempsensor": "DATA2C",    # typically D2C
+    "tempmirrorsensor": "UINT16",  # UIN
     "desiredtemp": "UINT8",    # UCH
     "outsidetemp": "INT8",      # SCH
     # Pressure types
@@ -173,12 +192,36 @@ SCALAR_TYPE_MAP: Dict[str, str] = {
     "percents": "INT8",        # SCH with % unit
     # Status/on-off types
     "onoff": "UINT8",
+    "onoff2": "UINT8",
     "yesno": "UINT8",
+    "yesno2": "UINT8",
     "errorok": "UINT8",
     "phase": "UINT8",
+    "phaseok": "UINT8",
+    "dcfstate": "UINT8",
     # Energy types
     "energy4": "UINT32",       # typically ULG
-    "integral": "UINT32",
+    "energy": "UINT16",        # UIN
+    "integral": "INT16",       # SIN
+    # Flow / speed
+    "fanspeed": "UINT16",      # UIN
+    "fanspeedoffset": "INT16", # SIN
+    "flowrate": "UINT16",      # UIN
+    "flowrate100": "UINT16",   # UIN
+    "airflowrate": "UINT16",   # UIN
+    "speed": "UINT16",         # UIN
+    # Time
+    "hoursum": "UINT32",       # ULG -> 4 bytes
+    "hoursum2": "UINT16",      # UIN -> 2 bytes
+    "hours": "UINT8",          # HCD / UCH -> 1 byte
+    "hours1": "DATA1C",        # D1C -> 1 byte / 2
+    "minutes": "UINT16",       # UIN
+    "minutes0": "UINT8",       # UCH
+    "minutes2": "UINT16",      # UIN
+    "seconds": "UINT32",       # ULG
+    "seconds0": "UINT8",       # UCH
+    "seconds2": "UINT16",      # UIN
+    "seconds4": "UINT32",      # ULG
     # Unit/string types
     "unit": "UINT8",
     "fueltype": "UINT8",
@@ -187,9 +230,21 @@ SCALAR_TYPE_MAP: Dict[str, str] = {
     "opdatatransfer": "UINT8",
     "opdataheat": "UINT8",
     "opdataaction": "UINT8",
+    "mcmode": "UINT8",
+    "power": "UINT8",
+    # Calibration
+    "calibration": "DATA2C",   # D2C
+    "calibration0": "UINT8",   # UCH
+    "calibration1": "DATA1C",  # D1C
+    "calibrations": "INT8",    # SCH
+    # Misc numeric
+    "uin100": "UINT16",        # UIN
+    "version": "UINT16",
+    "pressm2": "UINT16",       # UIN
+    "curve": "UINT16",         # UIN
+    "frequency": "UINT16",     # UIN
     # Skip/ignore
     "skip": "UINT8",
-    "version": "UINT16",
     # String types
     "IGN": "CHAR1",
 }
@@ -281,17 +336,20 @@ def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]
     if t in SCALAR_TYPE_MAP:
         return "profile"
     if enums and t in enums:
-        return "unsupported"
+        # Enum types resolve to UINT8 (native), not "unsupported".
+        # They decode correctly on the wire; flag as native so validation
+        # doesn't reject them.
+        return "native"
     return "defaulted"
 
 
-def _map_profile_name(ebus_type: str, unit: str) -> str:
+def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = None) -> str:
     """Map a field's ebus_type and unit to a profile name in data_profiles.json.
     
     This uses the datatype and unit to determine the appropriate profile name.
     """
     # Get the mapped datatype
-    datatype = _map_type(ebus_type)
+    datatype = _map_type(ebus_type, max_length)
     unit_lower = (unit or "").strip().lower()
     
     # Special mappings based on type + unit combinations
@@ -520,7 +578,7 @@ def profiles_to_flat_entries(
             seen.add(dedup_key)
 
             # Canonical profile name (same mapping commands use for references)
-            profile_name = _map_profile_name(f.ebus_type, unit)
+            profile_name = _map_profile_name(f.ebus_type, unit, _max_length_from_meta(f.meta))
 
             # Disambiguate name collisions
             original_name = profile_name
@@ -636,7 +694,9 @@ def commands_to_flat_entries(
         data_byte_count = 0
         if c.fields:
             for f in c.fields:
-                data_byte_count += DATATYPE_SIZE.get(f.our_datatype or f.ebus_type.upper(), 0)
+                dt = f.our_datatype or f.ebus_type.upper()
+                if dt in SUPPORTED_DATATYPES:
+                    data_byte_count += DATATYPE_SIZE.get(dt, 0)
         nn_write = meta.get("write_nn", 3 + data_byte_count)
     
         # Build full ebus read command: ZZ PB SB NN D1 D2 D3
@@ -685,7 +745,7 @@ def commands_to_flat_entries(
         fields: List[Dict[str, Any]] = []
         for pos, f in enumerate(c.fields, start=1):
             # Get the profile name based on type and unit
-            profile = _map_profile_name(f.ebus_type, f.unit or "")
+            profile = _map_profile_name(f.ebus_type, f.unit or "", _max_length_from_meta(f.meta))
             
             # Get min/max overrides from field meta
             min_val = f.meta.get("min") if f.meta.get("min") is not None else None
@@ -1226,7 +1286,7 @@ def _group_profiles(fam: FamilyIR) -> None:
             ]
             key = "_".join(p for p in key_parts if p)
             if len(key) > 24:
-                key = key[:24]
+                key = key[:24].rstrip("_")
 
         if key not in groups:
             groups[key] = []

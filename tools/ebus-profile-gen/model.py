@@ -65,5 +65,5 @@ def profile_key_from_fields(fields: List[FieldIR]) -> str:
         parts.append(f.our_datatype or f.ebus_type or "x")
     key = "_".join(parts) if parts else "profile"
     if len(key) > 24:
-        key = key[:24]
+        key = key[:24].rstrip("_")
     return key
