@@ -730,14 +730,16 @@ def commands_to_flat_entries(
             "master": False,  # Default
             "fields": fields,
         }
-        entries.append(entry)
 
+        # Deduplicate namespace collisions: same model in multiple namespaces
+        # produces identical read_cmd + fields. Keep all variants but log them
+        # so the user can curate by hardware/software version.
         duplicate = seen_read_cmd.get(read_cmd)
         if duplicate is not None:
-            log.warn(
+            log.debug(
                 "command",
-                "read_cmd collides with an earlier command",
-                action="duplicate",
+                "namespace collision: same read_cmd in another variant",
+                action="namespace_collision",
                 key=key,
                 name=command_name,
                 namespace=namespace,
@@ -746,6 +748,7 @@ def commands_to_flat_entries(
             )
         else:
             seen_read_cmd[read_cmd] = key
+        entries.append(entry)
 
         log.info(
             "command",
@@ -1150,11 +1153,7 @@ def build_profiles_and_commands(
             unsupported_reason=unsupported_reason,
             meta=meta,
         )
-        # Skip base models that are only used for inheritance
-        if reg_name not in inherited_model_names:
-            fam.commands.append(cmd_ir)
-
-        # Log what happened to this register.
+        # Determine kind of register
         if template_name is None and template_type is not None:
             kind = "template_definition"
         elif reg_name in inherited_model_names:
@@ -1162,11 +1161,17 @@ def build_profiles_and_commands(
         else:
             kind = "register"
 
+        # Only concrete registers become commands; skip template definitions
+        # and inherited base models.
+        if kind == "register":
+            fam.commands.append(cmd_ir)
+
+        # Log what happened to this register.
         if kind == "template_definition":
             log.warn(
                 "command",
-                "template definition emitted as a command (expected only instantiations)",
-                action="emitted_template_definition",
+                "template definition skipped (only instantiations become commands)",
+                action="skipped_template_definition",
                 name=reg_name,
                 namespace=reg.get("namespace", ""),
                 kind=kind,

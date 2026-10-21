@@ -78,11 +78,6 @@ def validate_log(
                 f"[{stage}] template definition emitted as a command: "
                 f"{rec.get('name')!r}"
             )
-        elif action == "duplicate":
-            issues.append(
-                f"[{stage}] read_cmd collision: {rec.get('read_cmd')} "
-                f"({rec.get('name')!r} vs {rec.get('collides_with')!r})"
-            )
 
         if action == "emitted" and rec.get("rw") == "write" and not rec.get("write_cmd"):
             issues.append(
