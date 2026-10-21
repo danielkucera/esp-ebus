@@ -129,6 +129,23 @@ DATATYPE_SIZE: Dict[str, int] = {
     "CHAR21": 21, "HEX21": 21,
 }
 
+# ebus-library native DataTypes it can actually decode/encode.
+# Anything not in this set cannot be turned into a data profile.
+SUPPORTED_DATATYPES: set = {
+    # 1 byte
+    "BCD", "UINT8", "INT8", "DATA1B", "DATA1C", "CHAR1", "HEX1",
+    # 2 bytes
+    "UINT16", "UINT16R", "INT16", "INT16R", "DATA2B", "DATA2BR",
+    "DATA2C", "DATA2CR", "CHAR2", "HEX2",
+    # 3 bytes
+    "CHAR3", "HEX3",
+    # 4 bytes
+    "UINT32", "UINT32R", "INT32", "INT32R", "FLOAT4", "FLOAT4R",
+    "CHAR4", "HEX4",
+    # 5-8 bytes
+    "CHAR5", "HEX5", "CHAR6", "HEX6", "CHAR7", "HEX7", "CHAR8", "HEX8",
+}
+
 # Mapping from ebusd-configuration scalar names to our datatypes
 # These are from _templates.tsp and device-specific includes
 SCALAR_TYPE_MAP: Dict[str, str] = {
@@ -448,38 +465,71 @@ def tsp_type_to_datatype(tsp_type: str) -> str:
 def profiles_to_flat_entries(
     fam: FamilyIR, log: Any = None
 ) -> List[Dict[str, Any]]:
-    """Convert FamilyIR profiles to flat data_profiles.json schema entries.
+    """Convert FamilyIR commands to flat data_profiles.json schema entries.
 
-    Each unique field in each profile becomes one flat entry:
+    Each unique field profile becomes one flat entry:
     {name, datatype, unit, divider, digits, min, max}
-    
-    Note: We deduplicate by (name, datatype, unit, divider) to avoid duplicates.
+
+    Entries are named canonically via _map_profile_name so that command
+    field references (which use the same mapping) resolve to existing
+    profiles. Deduplication is by (datatype, unit, divider) so that two
+    fields with identical semantics share one profile entry.
     """
     log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
     seen: set = set()
-    
-    for key, p in fam.profiles.items():
-        for f in p.fields:
-            # Create a unique key for deduplication
-            dedup_key = (f.name, f.our_datatype or f.ebus_type, f.unit, f.factor)
+    used_names: set = set()
+
+    for cmd in fam.commands:
+        for f in cmd.fields:
+            datatype = f.our_datatype or _map_type(
+                f.ebus_type, _max_length_from_meta(f.meta)
+            )
+            unit = f.unit or ""
+
+            # Skip datatypes the ebus-library cannot decode/encode.
+            # (e.g. CHAR9+, HEX9+, ERRORHISTORY, POWER, etc.)
+            if datatype not in SUPPORTED_DATATYPES:
+                log.warn(
+                    "profile",
+                    "profile entry skipped: datatype not supported by ebus-library",
+                    action="skipped_unsupported_datatype",
+                    name=f.name,
+                    input_type=f.ebus_type,
+                    datatype=datatype,
+                    classification=_classify_type(f.ebus_type, datatype),
+                )
+                continue
+
+            # Deduplicate by profile identity (datatype, unit, divider)
+            try:
+                divider = float(f.factor) if f.factor else 1.0
+            except ValueError:
+                divider = 1.0
+            dedup_key = (datatype, unit, divider)
             if dedup_key in seen:
                 log.debug(
                     "profile",
                     "profile entry deduplicated",
                     action="deduplicated",
                     name=f.name,
-                    datatype=f.our_datatype or f.ebus_type,
-                    unit=f.unit,
+                    datatype=datatype,
+                    unit=unit,
                 )
                 continue
             seen.add(dedup_key)
-            
-            try:
-                divider = float(f.factor) if f.factor else 1.0
-            except ValueError:
-                divider = 1.0
-            
+
+            # Canonical profile name (same mapping commands use for references)
+            profile_name = _map_profile_name(f.ebus_type, unit)
+
+            # Disambiguate name collisions
+            original_name = profile_name
+            suffix = 1
+            while profile_name in used_names:
+                profile_name = f"{original_name}_{suffix}"
+                suffix += 1
+            used_names.add(profile_name)
+
             # Parse digits from meta
             digits = 0
             meta_digits = f.meta.get("digits")
@@ -490,22 +540,21 @@ def profiles_to_flat_entries(
                     digits = int(meta_digits)
                 except ValueError:
                     digits = 0
-            
+
             # Get min/max from meta
             min_val = f.meta.get("min", 0)
             max_val = f.meta.get("max", 0)
-            
+
             # Convert to int if they're whole numbers
             if isinstance(min_val, float) and min_val.is_integer():
                 min_val = int(min_val)
             if isinstance(max_val, float) and max_val.is_integer():
                 max_val = int(max_val)
 
-            datatype = f.our_datatype or _map_type(f.ebus_type, _max_length_from_meta(f.meta))
             entry = {
-                "name": f.name,
+                "name": profile_name,
                 "datatype": datatype,
-                "unit": f.unit or "",
+                "unit": unit,
                 "divider": divider if divider != 1.0 else 1,
                 "digits": digits,
                 "min": min_val,
@@ -517,14 +566,14 @@ def profiles_to_flat_entries(
                 "profile",
                 "data profile entry emitted",
                 action="emitted",
-                name=entry["name"],
+                name=profile_name,
                 datatype=datatype,
-                unit=entry["unit"],
+                unit=unit,
                 divider=entry["divider"],
                 digits=digits,
                 classification=_classify_type(f.ebus_type, datatype),
             )
-    
+
     return entries
 
 

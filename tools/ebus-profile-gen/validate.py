@@ -78,11 +78,6 @@ def validate_log(
                 f"[{stage}] template definition emitted as a command: "
                 f"{rec.get('name')!r}"
             )
-        elif action == "skipped":
-            issues.append(
-                f"[{stage}] register skipped ({rec.get('cause', 'unknown')}): "
-                f"{rec.get('name')!r}"
-            )
         elif action == "duplicate":
             issues.append(
                 f"[{stage}] read_cmd collision: {rec.get('read_cmd')} "
