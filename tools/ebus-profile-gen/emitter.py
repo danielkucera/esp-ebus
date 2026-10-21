@@ -12,13 +12,19 @@ class Emitter:
         self.commands_out_path = commands_out_path
 
     def emit_profiles(self, entries: List[Dict[str, Any]]) -> None:
-        os.makedirs(os.path.dirname(self.profiles_out_path), exist_ok=True)
+        _ensure_parent_dir(self.profiles_out_path)
         with open(self.profiles_out_path, "w", encoding="utf-8") as f:
             json.dump(entries, f, indent=2)
             f.write("\n")
 
     def emit_commands(self, commands: List[Dict[str, Any]]) -> None:
-        os.makedirs(os.path.dirname(self.commands_out_path), exist_ok=True)
+        _ensure_parent_dir(self.commands_out_path)
         with open(self.commands_out_path, "w", encoding="utf-8") as f:
             json.dump(commands, f, indent=2)
             f.write("\n")
+
+
+def _ensure_parent_dir(path: str) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)

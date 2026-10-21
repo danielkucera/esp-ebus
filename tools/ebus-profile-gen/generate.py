@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
-from typing import Any, Dict, List
+from typing import Any, List
 
 # ensure local imports work when run directly
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -18,6 +19,7 @@ import tsp_parser
 import mapper
 import emitter
 import validate
+from convlog import ConversionLog
 
 
 def main() -> int:
@@ -37,6 +39,17 @@ def main() -> int:
     p.add_argument("--out-commands", help="explicit path for generated commands JSON")
     p.add_argument("--validate", action="store_true", default=True)
     p.add_argument("--no-validate", dest="validate", action="store_false")
+    p.add_argument(
+        "--log",
+        help="path for the structured conversion log (default: <out-generated>/<tsp_stem>.conversion.jsonl)",
+    )
+    p.add_argument("--no-log", dest="log", action="store_const", const="")
+    p.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warn", "error"],
+        default="info",
+        help="minimum severity written to the conversion log (default: info)",
+    )
     args = p.parse_args()
 
     repo_root = os.getcwd()
@@ -67,6 +80,22 @@ def main() -> int:
         print(f"error: tsp file not found: {tsp_rel}", file=sys.stderr)
         return 2
 
+    # Derive output filenames from tsp basename (e.g. 08.ehp.tsp -> 08.ehp.json)
+    tsp_stem = os.path.splitext(os.path.basename(args.tsp_file))[0]
+
+    # Determine output paths
+    gen_dir = args.out_generated or os.path.join(
+        repo_root, "tools", "ebus-profile-gen", "generated"
+    )
+    profiles_path = args.out_profiles or os.path.join(gen_dir, f"{tsp_stem}.profiles.json")
+    commands_path = args.out_commands or os.path.join(gen_dir, f"{tsp_stem}.json")
+
+    # Structured conversion log
+    log_path = args.log
+    if log_path is None:
+        log_path = os.path.join(gen_dir, f"{tsp_stem}.conversion.jsonl")
+    log = ConversionLog(path=log_path, level=args.log_level)
+
     res = resolver.IncludeResolver(ebusd_root)
     try:
         files = res.resolve(tsp_rel)
@@ -77,48 +106,43 @@ def main() -> int:
         print(f"error: resolving tsp includes failed: {e}", file=sys.stderr)
         return 2
 
-    parser = tsp_parser.TspParser(files)
+    parser = tsp_parser.TspParser(files, log=log)
     raw = parser.parse()
 
-    fam = mapper.build_profiles_and_commands(raw)
+    fam = mapper.build_profiles_and_commands(raw, log=log)
 
-    # Derive output filenames from tsp basename (e.g. 08.ehp.tsp -> 08.ehp.json)
-    tsp_stem = os.path.splitext(os.path.basename(args.tsp_file))[0]
-
-    # Derive key prefix: strip leading digits/dots from stem, add underscore
-    # e.g. 08.ehp → ehp_, 08.bai → bai_
-    import re
-
-    stem_match = re.search(r"([a-zA-Z]+)$", tsp_stem)
-    default_prefix = f"{stem_match.group(1).lower()}_" if stem_match else ""
+    # Derive key prefix: strip leading "NN." from the tsp stem (e.g.
+    # 08.ehp → ehp_, 05.vd6 → vd6_, 06.pms → pms_), then add underscore.
+    name = re.sub(r"^\d+\.?", "", tsp_stem)
+    default_prefix = f"{name.lower()}_" if name else ""
     key_prefix = args.key_prefix if args.key_prefix is not None else default_prefix
 
-    # Determine output paths
-    gen_dir = args.out_generated or os.path.join(
-        repo_root, "tools", "ebus-profile-gen", "generated"
-    )
-    profiles_path = args.out_profiles or os.path.join(gen_dir, f"{tsp_stem}.profiles.json")
-    commands_path = args.out_commands or os.path.join(gen_dir, f"{tsp_stem}.json")
-
     # Convert to flat entries
-    profiles_entries = mapper.profiles_to_flat_entries(fam)
-    commands_entries = mapper.commands_to_flat_entries(fam, key_prefix=key_prefix, aliases=raw.get("aliases", {}))
+    profiles_entries = mapper.profiles_to_flat_entries(fam, log=log)
+    commands_entries = mapper.commands_to_flat_entries(
+        fam, key_prefix=key_prefix, aliases=raw.get("aliases", {}), log=log
+    )
 
     # Emit raw generated output (gitignored)
     em = emitter.Emitter(profiles_path, commands_path)
     em.emit_profiles(profiles_entries)
     em.emit_commands(commands_entries)
 
+    log.info("emit", "profiles written", path=profiles_path, count=len(profiles_entries))
+    log.info("emit", "commands written", path=commands_path, count=len(commands_entries))
+
+    # Write the conversion log and print a summary.
+    log.write()
+    _print_summary(log, log_path)
+
     if args.validate:
         issues: List[str] = []
         for entry in profiles_entries:
             issues.extend(validate.check_no_trailing_underscores(entry))
-        try:
-            with open(commands_path) as f:
-                cobj = json.load(f)
-            issues.extend(validate.check_no_trailing_underscores(cobj))
-        except Exception as e:
-            issues.append(f"failed to validate commands: {e}")
+        issues.extend(validate.check_no_trailing_underscores(commands_entries))
+        issues.extend(
+            validate.validate_log(log.records, profiles_entries, commands_entries)
+        )
         if issues:
             for i in issues:
                 print(f"validation: {i}", file=sys.stderr)
@@ -127,6 +151,41 @@ def main() -> int:
     print(f"wrote {len(profiles_entries)} profiles to {profiles_path}")
     print(f"wrote {len(commands_entries)} commands to {commands_path}")
     return 0
+
+
+def _print_summary(log: ConversionLog, log_path: str) -> None:
+    summary = log.summary()
+    by_sev = summary["by_severity"]
+    by_class = summary["by_classification"]
+    print(
+        "conversion log: "
+        f"{summary['total']} records "
+        f"(info={by_sev['info']} warn={by_sev['warn']} error={by_sev['error']}) "
+        f"-> {log_path}",
+        file=sys.stderr,
+    )
+    if by_class:
+        print(
+            "classifications: "
+            + ", ".join(f"{k}={v}" for k, v in sorted(by_class.items())),
+            file=sys.stderr,
+        )
+    for severity in ("error", "warn"):
+        records = [r for r in log.records if r.get("severity") == severity]
+        if not records:
+            continue
+        print(f"{severity} ({len(records)}):", file=sys.stderr)
+        for rec in records[:10]:
+            target = (
+                rec.get("input_type")
+                or rec.get("name")
+                or rec.get("scalar")
+                or rec.get("model")
+                or ""
+            )
+            print(f"  [{rec.get('stage')}] {rec.get('reason')} — {target}", file=sys.stderr)
+        if len(records) > 10:
+            print(f"  ... and {len(records) - 10} more (see {log_path})", file=sys.stderr)
 
 
 if __name__ == "__main__":

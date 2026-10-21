@@ -6,8 +6,10 @@ from typing import Dict, Any, List, Optional
 
 try:
     from .model import FieldIR, ProfileIR, CommandIR, FamilyIR, profile_key_from_fields
+    from .convlog import NULL_LOG, ConversionLog
 except ImportError:
     from model import FieldIR, ProfileIR, CommandIR, FamilyIR, profile_key_from_fields
+    from convlog import NULL_LOG, ConversionLog
 
 
 # Mapping from eBUS TypeSpec base types to our datatypes
@@ -103,6 +105,30 @@ TYPE_MAP: Dict[str, str] = {
     "BDT": "UINT8",   # 1-byte date variant
 }
 
+# Byte size per ebus-library DataType name (matches ebus::DataType enum high byte).
+# Used to compute the eBUS write NN byte: NN = 3 + data_byte_count.
+DATATYPE_SIZE: Dict[str, int] = {
+    # 1 byte
+    "BCD": 1, "UINT8": 1, "INT8": 1, "DATA1B": 1, "DATA1C": 1, "CHAR1": 1, "HEX1": 1, "BOOL": 1,
+    # 2 bytes
+    "UINT16": 2, "UINT16R": 2, "INT16": 2, "INT16R": 2, "DATA2B": 2, "DATA2BR": 2,
+    "DATA2C": 2, "DATA2CR": 2, "CHAR2": 2, "HEX2": 2,
+    # 3 bytes
+    "CHAR3": 3, "HEX3": 3,
+    # 4 bytes
+    "UINT32": 4, "UINT32R": 4, "INT32": 4, "INT32R": 4, "FLOAT4": 4, "FLOAT4R": 4,
+    "CHAR4": 4, "HEX4": 4,
+    # 5-8 bytes
+    "CHAR5": 5, "HEX5": 5, "CHAR6": 6, "HEX6": 6, "CHAR7": 7, "HEX7": 7, "CHAR8": 8, "HEX8": 8,
+    # 9-21 bytes (ebusd defines these via @maxLength on STR/HEX, but the
+    # ebus-library only supports up to CHAR8/HEX8 — these are unsupported)
+    "CHAR9": 9, "HEX9": 9, "CHAR10": 10, "HEX10": 10, "CHAR11": 11, "HEX11": 11,
+    "CHAR12": 12, "HEX12": 12, "CHAR13": 13, "HEX13": 13, "CHAR14": 14, "HEX14": 14,
+    "CHAR15": 15, "HEX15": 15, "CHAR16": 16, "HEX16": 16, "CHAR17": 17, "HEX17": 17,
+    "CHAR18": 18, "HEX18": 18, "CHAR19": 19, "HEX19": 19, "CHAR20": 20, "HEX20": 20,
+    "CHAR21": 21, "HEX21": 21,
+}
+
 # Mapping from ebusd-configuration scalar names to our datatypes
 # These are from _templates.tsp and device-specific includes
 SCALAR_TYPE_MAP: Dict[str, str] = {
@@ -175,6 +201,17 @@ _TWO_FIELD_TEMPLATES = {
     "ServiceUpdateRegister",
 }
 
+# Template models whose instances are writable on the eBUS bus (respond to
+# write commands, NN=0x04) unless explicitly marked @passive.
+_WRITABLE_TEMPLATES = {
+    "WriteRegister",
+    "InstallRegister",
+    "ServiceCommandRegister",
+    "UpdateRegister",
+    "InstallUpdateRegister",
+    "ServiceUpdateRegister",
+}
+
 
 def _strip_qualified(ebus_type: str) -> str:
     """Strip namespace qualification from a type name (Ebus.Num.UCH -> UCH)."""
@@ -184,14 +221,51 @@ def _strip_qualified(ebus_type: str) -> str:
     return t
 
 
-def _map_type(ebus_type: str) -> str:
-    """Map an eBUS TypeSpec type to our datatype string."""
-    # First try the direct type map
-    mapped = TYPE_MAP.get(_strip_qualified(ebus_type))
+def _map_type(ebus_type: str, max_length: Optional[int] = None) -> str:
+    """Map an eBUS TypeSpec type to our datatype string.
+
+    For STR/HEX types the @maxLength decorator selects the exact CHAR/HEX
+    width (e.g. STR + maxLength(21) → CHAR21). The ebus-library only supports
+    up to CHAR8/HEX8; wider types are flagged as unsupported by the caller.
+    """
+    t = _strip_qualified(ebus_type)
+    mapped = TYPE_MAP.get(t)
     if mapped:
+        if t in ("STR", "HEX") and max_length:
+            base = "CHAR" if t == "STR" else "HEX"
+            return f"{base}{max_length}"
         return mapped
     # Try scalar type map (for named scalars like tempsensor, cntstarts, etc.)
-    return SCALAR_TYPE_MAP.get(_strip_qualified(ebus_type), ebus_type.upper() if ebus_type else "")
+    return SCALAR_TYPE_MAP.get(t, ebus_type.upper() if ebus_type else "")
+
+
+def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]] = None) -> str:
+    """Classify an ebusd TypeSpec type for the conversion log.
+
+    Returns one of: native, profile, unsupported, defaulted.
+
+    Classification is based on the mapped ebus-library datatype; CHAR/HEX
+    types wider than 8 bytes are unsupported because the ebus-library only
+    supports CHAR1-8 / HEX1-8.
+    """
+    t = _strip_qualified(ebus_type)
+    d = _strip_qualified(datatype)
+    # CHAR/HEX width check on the mapped datatype (STR/HEX with @maxLength)
+    if d.startswith(("CHAR", "HEX")):
+        try:
+            prefix = "CHAR" if d.startswith("CHAR") else "HEX"
+            width = int(d[len(prefix):])
+        except ValueError:
+            width = 0
+        if width > 8:
+            return "unsupported"
+    if t in TYPE_MAP:
+        return "native"
+    if t in SCALAR_TYPE_MAP:
+        return "profile"
+    if enums and t in enums:
+        return "unsupported"
+    return "defaulted"
 
 
 def _map_profile_name(ebus_type: str, unit: str) -> str:
@@ -317,6 +391,19 @@ def _parse_factor(args_str: Optional[str]) -> Optional[float]:
         return None
 
 
+def _max_length_from_meta(meta: Optional[Dict[str, Any]]) -> Optional[int]:
+    """Parse @maxLength from field/scalar metadata (stored as a string)."""
+    if not meta:
+        return None
+    v = meta.get("max_length")
+    if v is None or v == "":
+        return None
+    try:
+        return int(str(v).strip())
+    except ValueError:
+        return None
+
+
 def _camel_to_snake(name: str) -> str:
     """Convert CamelCase or PascalCase to snake_case."""
     # Insert underscore before capital letters, then lowercase
@@ -358,7 +445,9 @@ def tsp_type_to_datatype(tsp_type: str) -> str:
     return _map_type(tsp_type)
 
 
-def profiles_to_flat_entries(fam: FamilyIR) -> List[Dict[str, Any]]:
+def profiles_to_flat_entries(
+    fam: FamilyIR, log: Any = None
+) -> List[Dict[str, Any]]:
     """Convert FamilyIR profiles to flat data_profiles.json schema entries.
 
     Each unique field in each profile becomes one flat entry:
@@ -366,6 +455,7 @@ def profiles_to_flat_entries(fam: FamilyIR) -> List[Dict[str, Any]]:
     
     Note: We deduplicate by (name, datatype, unit, divider) to avoid duplicates.
     """
+    log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
     seen: set = set()
     
@@ -374,6 +464,14 @@ def profiles_to_flat_entries(fam: FamilyIR) -> List[Dict[str, Any]]:
             # Create a unique key for deduplication
             dedup_key = (f.name, f.our_datatype or f.ebus_type, f.unit, f.factor)
             if dedup_key in seen:
+                log.debug(
+                    "profile",
+                    "profile entry deduplicated",
+                    action="deduplicated",
+                    name=f.name,
+                    datatype=f.our_datatype or f.ebus_type,
+                    unit=f.unit,
+                )
                 continue
             seen.add(dedup_key)
             
@@ -402,27 +500,48 @@ def profiles_to_flat_entries(fam: FamilyIR) -> List[Dict[str, Any]]:
                 min_val = int(min_val)
             if isinstance(max_val, float) and max_val.is_integer():
                 max_val = int(max_val)
-            
-            entries.append({
+
+            datatype = f.our_datatype or _map_type(f.ebus_type, _max_length_from_meta(f.meta))
+            entry = {
                 "name": f.name,
-                "datatype": f.our_datatype or _map_type(f.ebus_type),
+                "datatype": datatype,
                 "unit": f.unit or "",
                 "divider": divider if divider != 1.0 else 1,
                 "digits": digits,
                 "min": min_val,
                 "max": max_val,
-            })
+            }
+            entries.append(entry)
+
+            log.info(
+                "profile",
+                "data profile entry emitted",
+                action="emitted",
+                name=entry["name"],
+                datatype=datatype,
+                unit=entry["unit"],
+                divider=entry["divider"],
+                digits=digits,
+                classification=_classify_type(f.ebus_type, datatype),
+            )
     
     return entries
 
 
-def commands_to_flat_entries(fam: FamilyIR, key_prefix: str = "", aliases: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
+def commands_to_flat_entries(
+    fam: FamilyIR,
+    key_prefix: str = "",
+    aliases: Optional[Dict[str, str]] = None,
+    log: Any = None,
+) -> List[Dict[str, Any]]:
     """Convert FamilyIR commands to config/simulation.json schema entries.
 
     {key, name, read_cmd, write_cmd, interval, master, 
      fields: [{name, profile, position, ha_profile}]}
     """
+    log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
+    seen_read_cmd: Dict[str, str] = {}
     
     # Try to get MF from aliases if not in meta
     default_mf = 0x00
@@ -434,6 +553,7 @@ def commands_to_flat_entries(fam: FamilyIR, key_prefix: str = "", aliases: Optio
     
     for idx, c in enumerate(fam.commands, start=1):
         meta = c.meta or {}
+        namespace = meta.get("namespace", "")
         
         # Get addressing from meta
         # Command format: ZZ PB SB NN D1 D2 D3 (7 bytes)
@@ -456,20 +576,52 @@ def commands_to_flat_entries(fam: FamilyIR, key_prefix: str = "", aliases: Optio
         # Extension bytes from @ext decorator
         ext_pb = meta.get("ext_pb", 0x00)
         ext_sb = meta.get("ext_sb", 0x00)
-        
-        # NN: 0x03 for read, 0x04 for write
-        nn_read = 0x03
-        nn_write = 0x04
-        
+    
+        # NN bytes: ZZ PB SB NN D1 D2 D3 [data...]
+        #   NN = number of bytes after NN = 1 (D1) + 2 (D2+D3 addr) + data_byte_count
+        #   NN = 3 + data_byte_count
+        #   read  NN typically 0x03 (no data)
+        #   write NN = 3 + sum of datatype sizes of the writable field(s).
+        nn_read = meta.get("read_nn", 0x03)
+    
+        data_byte_count = 0
+        if c.fields:
+            for f in c.fields:
+                data_byte_count += DATATYPE_SIZE.get(f.our_datatype or f.ebus_type.upper(), 0)
+        nn_write = meta.get("write_nn", 3 + data_byte_count)
+    
         # Build full ebus read command: ZZ PB SB NN D1 D2 D3
         # Format: lowercase hex without spaces, exactly 14 hex chars (7 bytes)
         # Example: 08b509030d9a00 where:
         #   ZZ=08 (destination), PB=b5 (source/MF), SB=09, NN=03, D1=0d, D2=9a, D3=00
         read_cmd = f"{zz:02x}{mf:02x}{pb:02x}{nn_read:02x}{sb_read:02x}{ext_pb:02x}{ext_sb:02x}"
-        
-        # Write command: ZZ PB SB NN D1 D2 D3 with NN=0x04
+    
+        # Write command: ZZ PB SB NN D1 D2 D3 (+ runtime data bytes appended by firmware)
         # Only generate if rw == "write"
         write_cmd = f"{zz:02x}{mf:02x}{pb:02x}{nn_write:02x}{sb_write:02x}{ext_pb:02x}{ext_sb:02x}" if c.rw == "write" else ""
+    
+        if c.rw == "write" and "write_nn" not in meta:
+            log.debug(
+                "command",
+                "write_cmd NN computed from datatype size",
+                action="write_cmd_nn_from_datatype",
+                name=c.name,
+                key=f"{idx:03d}",
+                namespace=namespace,
+                nn_write=nn_write,
+                data_byte_count=data_byte_count,
+                fields=[(f.name, f.our_datatype or f.ebus_type) for f in c.fields],
+            )
+
+        log.debug(
+            "command",
+            "write command generated" if write_cmd else "no write command (read-only)",
+            action="write_cmd_generated" if write_cmd else "read_only",
+            name=c.name,
+            read_cmd=read_cmd,
+            write_cmd=write_cmd,
+            rw=c.rw,
+        )
         
         # Determine key
         # Use sequential numbering with 3-digit zero-padding by default
@@ -504,26 +656,73 @@ def commands_to_flat_entries(fam: FamilyIR, key_prefix: str = "", aliases: Optio
                 field_entry["max"] = max_val
             
             fields.append(field_entry)
-        
-        entries.append({
+            log.debug(
+                "profile",
+                "command field profile selected",
+                action="profile_selected",
+                name=f.name,
+                input_type=f.ebus_type,
+                datatype=f.our_datatype or _map_type(f.ebus_type, _max_length_from_meta(f.meta)),
+                unit=f.unit or "",
+                profile=profile,
+                classification=_classify_type(
+                    f.ebus_type,
+                    f.our_datatype or _map_type(f.ebus_type, _max_length_from_meta(f.meta)),
+                ),
+            )
+
+        command_name = _format_command_name(c.name, namespace)
+        entry = {
             "key": key,
-            "name": _format_command_name(c.name, meta.get("namespace", "")),
+            "name": command_name,
             "read_cmd": read_cmd,
             "write_cmd": write_cmd,
             "interval": 0,  # Default to passive only
             "master": False,  # Default
             "fields": fields,
-        })
+        }
+        entries.append(entry)
+
+        duplicate = seen_read_cmd.get(read_cmd)
+        if duplicate is not None:
+            log.warn(
+                "command",
+                "read_cmd collides with an earlier command",
+                action="duplicate",
+                key=key,
+                name=command_name,
+                namespace=namespace,
+                read_cmd=read_cmd,
+                collides_with=duplicate,
+            )
+        else:
+            seen_read_cmd[read_cmd] = key
+
+        log.info(
+            "command",
+            "command entry emitted",
+            action="emitted",
+            key=key,
+            name=command_name,
+            namespace=namespace,
+            read_cmd=read_cmd,
+            write_cmd=write_cmd,
+            rw=c.rw,
+            fields=len(fields),
+        )
     
     return entries
 
 
-def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -> FamilyIR:
+def build_profiles_and_commands(
+    raw: Dict[str, Any], manufacturer: int = 0x00, log: Any = None
+) -> FamilyIR:
     """Build FamilyIR from raw tsp parser IR.
 
     Converts parser-extracted registers (commands) and fields into
     FamilyIR with ProfileIR grouping and CommandIR entries.
     """
+    log = log if log is not None else NULL_LOG
     fam = FamilyIR()
 
     registers: List[Dict[str, Any]] = raw.get("registers", [])
@@ -567,27 +766,20 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
         while t in scalars and t not in visited:
             visited.add(t)
             scalar = scalars[t]
-            meta.update(scalar.get("meta", {}))
-            # Extract decorator-based metadata from scalar
-            # In TSP, scalars can have decorators like @unit("°C")
-            # These are stored in the scalar's meta in our parser
-            if "unit" in scalar:
+            if scalar.get("unit"):
                 meta["unit"] = scalar["unit"]
-            if "minValue" in scalar:
-                meta["min"] = scalar["minValue"]
-            if "maxValue" in scalar:
-                meta["max"] = scalar["maxValue"]
-            if "step" in scalar:
-                step_val = scalar["step"]
-                if isinstance(step_val, str):
-                    try:
-                        step_float = float(step_val)
-                        if "." in step_val:
-                            meta["digits"] = len(step_val.split(".")[1].rstrip("0"))
-                    except ValueError:
-                        pass
-            if "maxLength" in scalar:
-                meta["max_length"] = scalar["maxLength"]
+            if scalar.get("factor"):
+                meta["factor"] = scalar["factor"]
+            if scalar.get("digits"):
+                meta["digits"] = scalar["digits"]
+            if scalar.get("min") is not None:
+                meta["min"] = scalar["min"]
+            if scalar.get("max") is not None:
+                meta["max"] = scalar["max"]
+            if scalar.get("values_enum"):
+                meta["values_enum"] = scalar["values_enum"]
+            if scalar.get("max_length"):
+                meta["max_length"] = scalar["max_length"]
             
             t = _strip_qualified(scalar.get("base_type", ""))
         
@@ -596,6 +788,37 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
             meta["values_enum"] = t
             meta["values"] = enums[t].get("entries", [])
         
+        datatype = _map_type(t)
+        classification = _classify_type(t_orig, datatype, enums)
+        if classification == "defaulted":
+            log.warn(
+                "resolve",
+                "type has no ebusd→library mapping; using raw name",
+                action="defaulted",
+                input_type=t_orig,
+                resolved_type=t,
+                datatype=datatype,
+            )
+        elif classification == "unsupported":
+            log.warn(
+                "resolve",
+                "type has no native ebus-library DataType equivalent",
+                action="unsupported",
+                input_type=t_orig,
+                resolved_type=t,
+                datatype=datatype,
+            )
+        else:
+            log.debug(
+                "resolve",
+                "type resolved",
+                action="resolved",
+                input_type=t_orig,
+                resolved_type=t,
+                datatype=datatype,
+                classification=classification,
+                unit=meta.get("unit", ""),
+            )
         return t, meta
 
     # Process each register into commands
@@ -623,7 +846,7 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
                 
                 f_ebus_type = resolved_type
-                f_our_datatype = _map_type(f_ebus_type)
+                f_our_datatype = _map_type(f_ebus_type, _max_length_from_meta(type_meta))
                 
                 # Get unit from template_type metadata or scalar
                 f_unit = type_meta.get("unit", "")
@@ -665,7 +888,7 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
                 
                 # Value field
                 f_ebus_type = resolved_type
-                f_our_datatype = _map_type(f_ebus_type)
+                f_our_datatype = _map_type(f_ebus_type, _max_length_from_meta(type_meta))
                 f_unit = type_meta.get("unit", "")
                 factor_str = type_meta.get("factor", type_meta.get("divisor", ""))
                 factor_val = _parse_factor(factor_str) if factor_str else None
@@ -716,7 +939,7 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
                 # Unknown template: assume single value field
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
                 f_ebus_type = resolved_type
-                f_our_datatype = _map_type(f_ebus_type)
+                f_our_datatype = _map_type(f_ebus_type, _max_length_from_meta(type_meta))
                 
                 field_ir = FieldIR(
                     name="value",
@@ -825,22 +1048,47 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
                     bitpos=bitpos,
                     bitlen=bitlen,
                     mask=mask,
-                    our_datatype=_map_type(resolved_type or f_ebus_type),
+                    our_datatype=_map_type(resolved_type or f_ebus_type, _max_length_from_meta(merged_meta)),
                     meta=merged_meta,
                 )
                 field_irs.append(field_ir)
 
-        # Determine if command is writable
+        # Determine if command is writable.
+        # Rules (in priority order):
+        #   1. @passive decorator  -> read-only (forces read, even for writable templates)
+        #   2. @write decorator    -> writable
+        #   3. writable template   -> writable (WriteRegister, InstallRegister, ...)
+        #   4. otherwise           -> read-only
+        explicit_passive = bool(meta.get("explicit_passive"))
+        explicit_write = bool(meta.get("explicit_write"))
+        if explicit_passive:
+            rw = "read"
+        elif explicit_write:
+            rw = "write"
+        elif template_name in _WRITABLE_TEMPLATES:
+            rw = "write"
+        else:
+            rw = "read"
+
         unsupported = False
         unsupported_reason = ""
-        
-        if rw == "write":
-            pass  # write_cmd will be generated
-        elif rw == "read":
-            pass  # read only
-        else:
+
+        if rw not in ("read", "write"):
             unsupported = True
             unsupported_reason = f"unknown rw direction: {rw}"
+
+        writable = rw == "write"
+        log.debug(
+            "command",
+            "writability determined",
+            action="writable" if writable else "read_only",
+            name=reg_name,
+            namespace=reg.get("namespace", ""),
+            rw=rw,
+            template=template_name,
+            explicit_write=explicit_write,
+            explicit_passive=explicit_passive,
+        )
 
         cmd_ir = CommandIR(
             name=reg_name,
@@ -856,6 +1104,44 @@ def build_profiles_and_commands(raw: Dict[str, Any], manufacturer: int = 0x00) -
         # Skip base models that are only used for inheritance
         if reg_name not in inherited_model_names:
             fam.commands.append(cmd_ir)
+
+        # Log what happened to this register.
+        if template_name is None and template_type is not None:
+            kind = "template_definition"
+        elif reg_name in inherited_model_names:
+            kind = "inherited_base"
+        else:
+            kind = "register"
+
+        if kind == "template_definition":
+            log.warn(
+                "command",
+                "template definition emitted as a command (expected only instantiations)",
+                action="emitted_template_definition",
+                name=reg_name,
+                namespace=reg.get("namespace", ""),
+                kind=kind,
+            )
+        elif kind == "inherited_base":
+            log.warn(
+                "command",
+                "register skipped because it is referenced via @inherit",
+                action="skipped",
+                name=reg_name,
+                namespace=reg.get("namespace", ""),
+                kind=kind,
+                cause="inherited_base_model",
+            )
+        else:
+            log.debug(
+                "command",
+                "register converted to command",
+                action="converted",
+                name=reg_name,
+                namespace=reg.get("namespace", ""),
+                kind=kind,
+                fields=len(field_irs),
+            )
 
     # Group commands into profiles by canonical field semantics
     _group_profiles(fam)

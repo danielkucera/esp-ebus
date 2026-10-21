@@ -178,4 +178,33 @@ Defaults:
 - `--key-prefix`: derived from tsp filename (e.g. `08.ehp.tsp` → `ehp_`)
 - `--out-generated`: `tools/ebus-profile-gen/generated/`
 - `--validate`: true (fail on constraint violations)
+- `--log`: `<out-generated>/<tsp_stem>.conversion.jsonl` (write; gitignored)
+- `--log-level`: `info` (min severity written; `debug|info|warn|error`)
+- `--no-log`: disable conversion log writing
+
+## Conversion log (`generated/<tsp_stem>.conversion.jsonl`)
+
+The generator emits a structured JSONL conversion log alongside the two output
+files. One record per decision (parse/resolve/template/profile/command/emit),
+so you can debug *what* was converted and *why* something was skipped or
+defaulted:
+
+```
+{"stage":"parse","severity":"warn","reason":"scalar redefined ...","scalar":"cntstarts","line":8,...}
+{"stage":"resolve","severity":"warn","reason":"type has no ebusd→library mapping ...","input_type":"phaseok","datatype":"phaseok",...}
+{"stage":"command","severity":"warn","reason":"read_cmd collides ...","read_cmd":"08b509030d0800","name":"source","duplicate":...}
+```
+
+Each record carries `stage`, `severity`, `reason`, `classification` (`native` /
+`profile` / `unsupported` / `defaulted`), `action`, plus context
+(`model`, `field`, `scalar`, `key`, `name`, `read_cmd`, `profile`,
+`line`, `namespace`, `source`). The CLI prints a severity summary plus the
+top warnings to stderr, with the full detail in the JSONL file.
+
+Use `--log-level warn` to suppress debug noise, `--no-log` to skip writing the
+file, or `--log <path>` to override the location. Validation (`--validate`)
+fails on defaulted/unsupported type mappings, emitted template definitions,
+read_cmd collisions, writable commands without a `write_cmd`, referenced
+profiles that do not exist, and trailing underscores — treating the generator
+output as ready to use only when none of those are present.
 
