@@ -1,0 +1,275 @@
+[
+  {
+    "key": "wtc_flow",
+    "name": "Weishaupt/Ketel/Vertrektemperatuur",
+    "read_cmd": "085003019e",
+    "write_cmd": "",
+    "interval": 10,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "uint16_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "wtc_flue",
+    "name": "Weishaupt/Ketel/Rookgastemperatuur",
+    "read_cmd": "085003019f",
+    "write_cmd": "",
+    "interval": 10,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "uint16_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "wtc_outside",
+    "name": "Weishaupt/Buitentemperatuur",
+    "read_cmd": "fe500a0d",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int8_celsius",
+        "position": 10
+      }
+    ]
+  },
+  {
+    "key": "wtc_dhw",
+    "name": "Weishaupt/Warmwaterboiler",
+    "read_cmd": "fe500a0d",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data1c_celsius",
+        "position": 8
+      }
+    ]
+  },
+  {
+    "key": "hk2_room",
+    "name": "Weishaupt/Kring_2_Beneden/Ruimtetemperatuur",
+    "read_cmd": "51501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 4
+      }
+    ]
+  },
+  {
+    "key": "hk2_flow_set",
+    "name": "Weishaupt/Kring_2_Beneden/Gewenste_vertrektemperatuur",
+    "read_cmd": "51501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "hk2_flow",
+    "name": "Weishaupt/Kring_2_Beneden/Vertrektemperatuur",
+    "read_cmd": "51501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 3
+      }
+    ]
+  },
+  {
+    "key": "hk2_normal",
+    "name": "Weishaupt/Kring_2_Beneden/Ruimtetemperatuur_normaal",
+    "read_cmd": "75502203700500",
+    "write_cmd": "70502309000500",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "weishaupt_write": true
+  },
+  {
+    "key": "hk2_reduced",
+    "name": "Weishaupt/Kring_2_Beneden/Ruimtetemperatuur_verlaagd",
+    "read_cmd": "75502203580800",
+    "write_cmd": "70502309000800",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "weishaupt_write": true
+  },
+  {
+    "key": "hk3_room",
+    "name": "Weishaupt/Kring_3_Boven/Ruimtetemperatuur",
+    "read_cmd": "52501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 4
+      }
+    ]
+  },
+  {
+    "key": "hk3_flow_set",
+    "name": "Weishaupt/Kring_3_Boven/Gewenste_vertrektemperatuur",
+    "read_cmd": "52501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "hk3_flow",
+    "name": "Weishaupt/Kring_3_Boven/Vertrektemperatuur",
+    "read_cmd": "52501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 3
+      }
+    ]
+  },
+  {
+    "key": "hk3_normal",
+    "name": "Weishaupt/Kring_3_Boven/Ruimtetemperatuur_normaal",
+    "read_cmd": "f5502203700500",
+    "write_cmd": "f0502309000500",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "weishaupt_write": true
+  },
+  {
+    "key": "hk3_reduced",
+    "name": "Weishaupt/Kring_3_Boven/Ruimtetemperatuur_verlaagd",
+    "read_cmd": "f5502203580800",
+    "write_cmd": "f0502309000800",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "weishaupt_write": true
+  },
+  {
+    "key": "hk4_flow",
+    "name": "Weishaupt/Kring_4_Vloerverwarming/Vertrektemperatuur",
+    "read_cmd": "53502203900f00",
+    "write_cmd": "",
+    "interval": 30,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1
+      }
+    ]
+  },
+  {
+    "key": "hk4_normal",
+    "name": "Weishaupt/Kring_4_Vloerverwarming/Ruimtetemperatuur_normaal",
+    "read_cmd": "1c502203700500",
+    "write_cmd": "17502309000500",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "weishaupt_write": true
+  },
+  {
+    "key": "hk4_reduced",
+    "name": "Weishaupt/Kring_4_Vloerverwarming/Ruimtetemperatuur_verlaagd",
+    "read_cmd": "1c502203580800",
+    "write_cmd": "17502309000800",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "weishaupt_write": true
+  }
+]
