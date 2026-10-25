@@ -66,6 +66,9 @@ class Command {
   ebus::ByteView getWriteCmd(const class CommandManager& command_manager) const;
   void setWriteCmd(PollSequence&& cmd, class CommandManager& command_manager);
 
+  uint32_t getPendingReadId() const { return pending_read_id_; }
+  void setPendingReadId(uint32_t id) { pending_read_id_ = id; }
+
   bool getActive() const;
   const uint16_t& getInterval() const;
   bool getMaster() const;
@@ -117,6 +120,7 @@ class Command {
 
  private:
   uint32_t session_id_ = 0;
+  uint32_t pending_read_id_ = 0;
   uint16_t poll_id_ = 0;
   uint32_t last_ = 0;
   PollSequence data_;
