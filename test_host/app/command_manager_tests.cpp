@@ -463,3 +463,20 @@ TEST_CASE("CommandManager removeFieldOverrides drains pool for a key",
 
   command_manager.wipeCommands();
 }
+
+TEST_CASE("Weishaupt write opt-in survives storage and JSON export", "[CommandManager]") {
+  command_manager.wipeCommands();
+  const std::string json = R"({"key":"stored_wcm","name":"WCM","read_cmd":"75502203700500","write_cmd":"70502309000500","weishaupt_write":true,"interval":60,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1}]})";
+  JsonReader reader(json);
+  command_manager.insertCommand(Command::fromJson(reader));
+  REQUIRE(command_manager.saveCommands() > 0);
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() > 0);
+  const auto* cmd = command_manager.findCommand("stored_wcm");
+  REQUIRE(cmd != nullptr);
+  REQUIRE(cmd->usesWeishauptWrite());
+  std::string exported;
+  command_manager.fetchCommands([&](std::string_view chunk) { exported += chunk; });
+  REQUIRE(exported.find("\"weishaupt_write\":true") != std::string::npos);
+  command_manager.wipeCommands();
+}

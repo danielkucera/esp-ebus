@@ -17,6 +17,38 @@
 #include "app/ha_profile.hpp"
 #include "system/logger.hpp"
 
+// A 5023 prefix contains destination, PB/SB, NN=9, CRC placeholder and
+// the two-byte parameter ID. Its inner CRC covers ID, value and suffix.
+ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
+                                           ebus::ByteView value) const {
+  auto prefix = getWriteCmd(manager);
+  if (prefix.empty() || value.empty()) return {};
+  if (weishaupt_write_ &&
+      (prefix.size() != 7 || prefix[1] != 0x50 || prefix[2] != 0x23 ||
+       prefix[3] != 9 || value.size() != 2)) return {};
+  auto result = ebus::makeSequence(prefix);
+  result.append(ebus::makeSequence(value));
+  if (weishaupt_write_) {
+    const uint8_t suffix[] = {0x5d, 0x01, 0x00, 0x00};
+    result.append(ebus::makeSequence(ebus::ByteView(suffix, sizeof(suffix))));
+    uint8_t crc = 0;
+    for (size_t i = 5; i < result.size(); ++i) {
+      uint8_t byte = result[i];
+      for (unsigned bit = 0; bit < 8; ++bit) {
+        const uint8_t polynomial = (crc & 0x80) ? 0x5c : 0;
+        crc = static_cast<uint8_t>((crc << 1) | (byte >> 7));
+        crc ^= polynomial;
+        byte = static_cast<uint8_t>(byte << 1);
+      }
+    }
+    uint8_t frame[13];
+    std::copy(result.begin(), result.end(), frame);
+    frame[4] = crc;
+    return ebus::makeSequence(ebus::ByteView(frame, sizeof(frame)));
+  }
+  return result;
+}
+
 const uint32_t& Command::getSessionId() const { return session_id_; }
 
 void Command::setSessionId(const uint32_t id) { session_id_ = id; }
@@ -476,7 +508,9 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
       PollSequence write_cmd;
       write_cmd.assign(ebus::ByteView(hex_buf, hex_len));
       command.setWriteCmd(std::move(write_cmd), command_manager);
-    } else if (key == "interval")
+    } else if (key == "weishaupt_write")
+      command.weishaupt_write_ = r.asBool();
+    else if (key == "interval")
       command.interval_ = r.asNum<uint16_t>();
     else if (key == "master")
       command.master_ = r.asBool();
@@ -659,6 +693,9 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader) {
           }
         }
       } break;
+      case 7:
+        command.weishaupt_write_ = reader.asBool();
+        break;
       default:
         reader.skipComposite(token);
         break;
@@ -727,6 +764,10 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
                  "Invalid type for field: %.*s", static_cast<int>(key.length()),
                  key.data());
         error = command_eval_error_buf;
+      }
+    } else if (key == "weishaupt_write") {
+      if (token != ebus::detail::JsonReader::Token::boolean) {
+        error = "Invalid type for field: weishaupt_write";
       }
     } else if (key == "interval") {
       if (token != ebus::detail::JsonReader::Token::number) {

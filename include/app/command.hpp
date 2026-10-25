@@ -66,6 +66,11 @@ class Command {
   ebus::ByteView getWriteCmd(const class CommandManager& command_manager) const;
   void setWriteCmd(PollSequence&& cmd, class CommandManager& command_manager);
 
+  ebus::Sequence buildWriteSequence(const class CommandManager& manager,
+                                    ebus::ByteView value) const;
+
+  bool usesWeishauptWrite() const { return weishaupt_write_; }
+
   bool getActive() const;
   const uint16_t& getInterval() const;
   bool getMaster() const;
@@ -128,6 +133,7 @@ class Command {
       0;  // 0 = none, 1-based index into CommandMmanager::write_cmds_
   uint16_t interval_ = 60;
   bool master_ = false;
+  bool weishaupt_write_ = false;
 
   command_types::FieldVector fields_;
 };

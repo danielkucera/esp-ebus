@@ -230,7 +230,7 @@ int64_t CommandManager::saveCommands() const {
       auto header_array = writer.arrayScope();
       static const char* header[] = {"key",       "name",     "read_cmd",
                                      "write_cmd", "interval", "master",
-                                     "fields"};
+                                     "fields", "weishaupt_write"};
       for (const char* h : header) writer.writeValue(h);
     }
 
@@ -274,6 +274,7 @@ int64_t CommandManager::saveCommands() const {
           }
         }
       }
+      writer.writeValue(c.usesWeishauptWrite());
     }
   }
   writer.flush();
@@ -342,6 +343,7 @@ void CommandManager::fetchCommands(
       }
       writer.writeField("interval", c->getInterval());
       writer.writeField("master", c->getMaster());
+      if (c->usesWeishauptWrite()) writer.writeField("weishaupt_write", true);
 
       auto arr = writer.arrayScope("fields");
       for (size_t j = 0; j < c->getFieldCount(); j++) {
