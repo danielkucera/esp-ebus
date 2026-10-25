@@ -359,10 +359,10 @@ TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
   REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1)).empty());
 }
 
-TEST_CASE("Write types reject unknown names, non-strings and the old boolean", "[Command]") {
+TEST_CASE("Write types reject unknown names and non-strings", "[Command]") {
   const char* settings[] = {R"("write_type":"other")", R"("write_type":true)",
       R"("write_type":false)", R"("write_type":null)", R"("write_type":1)",
-      R"("weishaupt_write":true)"};
+      R"("write_type":"default")"};
   for (auto setting : settings) {
     const std::string json = std::string(R"({"key":"type","name":"Type","read_cmd":"085003019e","write_cmd":"70502309000500",)") + setting +
         R"(,"fields":[{"name":"value","profile":"uint16","position":1}]})";
@@ -375,13 +375,13 @@ TEST_CASE("Write types reject unknown names, non-strings and the old boolean", "
   }
 }
 
-TEST_CASE("Explicit default writes preserve the existing bytes", "[Command]") {
+TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
   const std::string json = R"({
-  "key": "default_type",
-  "name": "Default",
+  "key": "simple_type",
+  "name": "Simple",
   "read_cmd": "085003019e",
   "write_cmd": "70502309ab0500",
-  "write_type": "default",
+  "write_type": "simple",
   "fields": [
     {
       "name": "value",

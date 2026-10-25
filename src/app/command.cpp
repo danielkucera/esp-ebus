@@ -552,8 +552,6 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
     } else if (key == "write_type")
       command.write_type_ = token == ebus::detail::JsonReader::Token::string
           ? parseWriteType(r.value()) : command_types::WriteType::invalid;
-    else if (key == "weishaupt_write")
-      command.write_type_ = command_types::WriteType::invalid;
     else if (key == "interval")
       command.interval_ = r.asNum<uint16_t>();
     else if (key == "master")
