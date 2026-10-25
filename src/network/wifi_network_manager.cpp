@@ -551,7 +551,7 @@ void WifiNetworkManager::configureStaticIpIfEnabled() {
   }
 }
 
-// Console-only diagnostics (see header): full WiFi slice with password.
+// Connection diagnostics must be safe to share while troubleshooting.
 // Worst case ~261 chars (bounded by FixedString sizes), fits max_msg_length.
 void WifiNetworkManager::logWifiSlice() {
   const std::string ssid =
@@ -569,9 +569,9 @@ void WifiNetworkManager::logWifiSlice() {
   char buf[320];
   const int n = snprintf(
       buf, sizeof(buf),
-      "wifi: ssid='%s' pass='%s' bssid='%s' static=%s ip=%s gw=%s mask=%s "
+      "wifi: ssid='%s' password_set=%s bssid='%s' static=%s ip=%s gw=%s mask=%s "
       "dns1=%s dns2=%s",
-      ssid.c_str(), pass.c_str(), bssid.c_str(),
+      ssid.c_str(), pass.empty() ? "false" : "true", bssid.c_str(),
       isStaticIpEnabled() ? "true" : "false", getConfiguredIpAddress().c_str(),
       getConfiguredGateway().c_str(), getConfiguredNetmask().c_str(),
       getConfiguredDns1().c_str(), getConfiguredDns2().c_str());

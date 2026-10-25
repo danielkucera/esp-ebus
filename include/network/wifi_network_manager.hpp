@@ -56,9 +56,9 @@ class WifiNetworkManager {
   static void setStatusLedMode(StatusLedMode mode);
   static void configureStaticIpIfEnabled();
   // One-shot diagnostics: after N consecutive STA failures the console is
-  // likely the only channel left (no WiFi = no HTTP), so log the full WiFi
-  // slice including the password (physical access implies full control
-  // anyway). Counter resets on every successful connect.
+  // likely the only channel left (no WiFi = no HTTP). Log connection settings
+  // and whether a password is configured, without exposing the password.
+  // Counter resets on every successful connect.
   static void logWifiSlice();
   static int consecutive_failures_;
 
