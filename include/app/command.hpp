@@ -16,7 +16,7 @@
 
 namespace command_types {
 
-enum class WriteType : uint8_t { standard, weishaupt, invalid };
+enum class WriteType : uint8_t { simple, weishaupt, invalid };
 
 #ifndef COMMAND_MAX_FIELDS
 inline constexpr size_t max_fields = 4;
@@ -136,7 +136,7 @@ class Command {
       0;  // 0 = none, 1-based index into CommandMmanager::write_cmds_
   uint16_t interval_ = 60;
   bool master_ = false;
-  command_types::WriteType write_type_ = command_types::WriteType::standard;
+  command_types::WriteType write_type_ = command_types::WriteType::simple;
 
   command_types::FieldVector fields_;
 };

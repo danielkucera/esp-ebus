@@ -323,7 +323,7 @@ TEST_CASE("Standard writes preserve bytes even for a 5023 prefix", "[Command]") 
       R"(","interval":60,"master":false,"fields":[{"name":"value","profile":"uint16","position":1}]})";
     JsonReader reader(json);
     Command cmd = Command::fromJson(reader);
-    REQUIRE(cmd.getWriteType() == command_types::WriteType::standard);
+    REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
     const uint8_t value[] = {0xaa, 0x00};
     auto frame = cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2));
     auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
@@ -394,7 +394,7 @@ TEST_CASE("Explicit default writes preserve the existing bytes", "[Command]") {
   REQUIRE(Command::evaluate(validation).empty());
   JsonReader reader(json);
   Command cmd = Command::fromJson(reader);
-  REQUIRE(cmd.getWriteType() == command_types::WriteType::standard);
+  REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
   const uint8_t value[] = {0xaa, 0};
   auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
   expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));

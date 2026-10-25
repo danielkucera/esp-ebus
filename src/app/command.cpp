@@ -19,7 +19,7 @@
 
 namespace {
 command_types::WriteType parseWriteType(std::string_view name) {
-  if (name == "default") return command_types::WriteType::standard;
+  if (name == "simple") return command_types::WriteType::simple;
   if (name == "weishaupt") return command_types::WriteType::weishaupt;
   return command_types::WriteType::invalid;
 }
@@ -42,8 +42,8 @@ uint8_t weishauptChecksum(ebus::ByteView payload) {
 
 const char* Command::getWriteTypeName() const {
   switch (write_type_) {
-    case command_types::WriteType::standard:
-      return "default";
+    case command_types::WriteType::simple:
+      return "simple";
     case command_types::WriteType::weishaupt:
       return "weishaupt";
     default:
@@ -56,7 +56,7 @@ ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
   auto prefix = getWriteCmd(manager);
   if (prefix.empty() || value.empty()) return {};
 
-  if (write_type_ == command_types::WriteType::standard) {
+  if (write_type_ == command_types::WriteType::simple) {
     auto result = ebus::makeSequence(prefix);
     result.append(ebus::makeSequence(value));
     return result;
@@ -815,8 +815,6 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
           parseWriteType(r.value()) == command_types::WriteType::invalid) {
         error = "unknown write_type";
       }
-    } else if (key == "weishaupt_write") {
-      error = "Unsupported field: weishaupt_write; use write_type";
     } else if (key == "interval") {
       if (token != ebus::detail::JsonReader::Token::number) {
         snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),

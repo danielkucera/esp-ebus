@@ -2,7 +2,7 @@
 
 INTERNAL firmware supports the captured WCM-FS parameter-write format when a
 command explicitly sets `"write_type": "weishaupt"`. Omit this property, or set
-it to `"default"`, to preserve the existing write behavior: append the encoded
+it to `"simple"`, to preserve the existing write behavior: append the encoded
 value to `write_cmd` without modifying either byte sequence.
 
 ## Command definition
@@ -34,11 +34,7 @@ Malformed opted-in prefixes or values are rejected before sending. Existing
 commands, including 5023 commands without the opt-in, keep their original bytes.
 The option survives JSON export and saving/reloading the command set. In the
 compact storage format it is an optional eighth column, after `fields`; older
-seven-column records use `"default"`. Unknown types and non-string type values
-are rejected. The earlier `weishaupt_write` boolean and boolean values in the
-eighth storage column are not supported; update and re-upload those command
-definitions. New configurations using this option require firmware that
-supports it.
+seven-column records use `"simple"`. 
 
 HTTP, MQTT and cron use the same write builder. For HTTP:
 
