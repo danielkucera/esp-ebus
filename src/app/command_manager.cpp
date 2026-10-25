@@ -428,6 +428,16 @@ void CommandManager::updateData(const ebus::ProtocolInfo& info) {
   if (info.poll_id != 0) {
     command = findCommand(info.poll_id);
   }
+  // Manual reads are one-shot sessions, not recurring poll items.
+  if (!command && info.session_id != 0) {
+    for (auto& candidate : commands_) {
+      if (candidate.getPendingReadId() == info.session_id) {
+        command = &candidate;
+        candidate.setPendingReadId(0);
+        break;
+      }
+    }
+  }
 
   auto update = [this](Command* cmd, const ebus::ProtocolInfo& info) {
     if (cmd->getFieldCount() == 0) return;

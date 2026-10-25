@@ -6,6 +6,7 @@
 #include <ebus/detail/json_reader.hpp>
 
 #include "app/command_manager.hpp"
+#include "app/command_read.hpp"
 #include "app/ebus_accessor.hpp"
 #include "network/http.hpp"
 #include "network/http_utils.hpp"
@@ -87,7 +88,7 @@ esp_err_t ValuesApi::handleValuesWrite(httpd_req_t* req) {
       return ESP_OK;
     }
     getEbusController().enqueue(app::priority::send, full_write);
-    command->setLast(0);
+    requestCommandRead(*command);
     HttpUtils::sendSuccessResponse(req, "write");
   } else {
     HttpUtils::sendErrorResponse(req, "400 Bad Request", "write",
@@ -123,8 +124,15 @@ esp_err_t ValuesApi::handleValuesRead(httpd_req_t* req) {
 
   Command* command = instance_->command_manager_.findCommand(key);
   if (command != nullptr) {
-    command->setLast(0);
-    HttpUtils::sendSuccessResponse(req, "read", "requested");
+    if (!command->getActive()) {
+      HttpUtils::sendErrorResponse(req, "400 Bad Request", "read",
+                                   "Passive command: waiting for bus traffic");
+    } else if (!requestCommandRead(*command)) {
+      HttpUtils::sendErrorResponse(req, "503 Service Unavailable", "read",
+                                   "Unable to queue bus read");
+    } else {
+      HttpUtils::sendSuccessResponse(req, "read", "requested");
+    }
   } else {
     HttpUtils::sendErrorResponse(req, "404 Not Found", "read",
                                  "Key '" + key + "' not found");
