@@ -100,6 +100,10 @@ void CommandManager::setCommandRemovedCallback(
 }
 
 void CommandManager::insertCommand(Command command) {
+  if (command.getWriteType() == command_types::WriteType::invalid) {
+    logger.error("CommandManager: rejected unsupported write_type");
+    return;
+  }
   std::lock_guard<std::recursive_mutex> lock(mutex_);
   for (size_t i = 0; i < commands_.size(); i++) {
     if (std::string_view(commands_[i].getKey()) ==
@@ -230,7 +234,7 @@ int64_t CommandManager::saveCommands() const {
       auto header_array = writer.arrayScope();
       static const char* header[] = {"key",       "name",     "read_cmd",
                                      "write_cmd", "interval", "master",
-                                     "fields", "weishaupt_write"};
+                                     "fields", "write_type"};
       for (const char* h : header) writer.writeValue(h);
     }
 
@@ -274,7 +278,7 @@ int64_t CommandManager::saveCommands() const {
           }
         }
       }
-      writer.writeValue(c.usesWeishauptWrite());
+      writer.writeValue(c.getWriteTypeName());
     }
   }
   writer.flush();
@@ -343,7 +347,7 @@ void CommandManager::fetchCommands(
       }
       writer.writeField("interval", c->getInterval());
       writer.writeField("master", c->getMaster());
-      if (c->usesWeishauptWrite()) writer.writeField("weishaupt_write", true);
+      writer.writeField("write_type", c->getWriteTypeName());
 
       auto arr = writer.arrayScope("fields");
       for (size_t j = 0; j < c->getFieldCount(); j++) {

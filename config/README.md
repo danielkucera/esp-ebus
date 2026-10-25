@@ -80,4 +80,4 @@ Commands are defined as a JSON array of objects. Each command object specifies a
 [`weishaupt-wtc.json`](weishaupt-wtc.json) contains installation-specific read
 and optional write definitions. Adapt the bus addresses before uploading.
 See [Weishaupt write support](../doc/weishaupt-writes.md) for the explicit
-`weishaupt_write` option, units, readback and known limitations.
+`write_type` option, units, readback and known limitations.

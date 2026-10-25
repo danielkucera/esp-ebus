@@ -1,8 +1,8 @@
 # Optional Weishaupt 5023 writes
 
 INTERNAL firmware supports the captured WCM-FS parameter-write format when a
-command explicitly sets `"weishaupt_write": true`. Omit this property, or set
-it to false, to preserve the existing write behavior: append the encoded value
+command explicitly sets `"write_type": "weishaupt"`. Omit this property, or set
+it to `"default"`, to preserve the existing write behavior: append the encoded value
 to `write_cmd` without modifying either byte sequence.
 
 ## Command definition
@@ -13,7 +13,7 @@ to `write_cmd` without modifying either byte sequence.
   "name": "Weishaupt/Downstairs/Normal_room_setpoint",
   "read_cmd": "75502203700500",
   "write_cmd": "70502309000500",
-  "weishaupt_write": true,
+  "write_type": "weishaupt",
   "interval": 60,
   "master": false,
   "fields": [
@@ -34,8 +34,11 @@ Malformed opted-in prefixes or values are rejected before sending. Existing
 commands, including 5023 commands without the opt-in, keep their original bytes.
 The option survives JSON export and saving/reloading the command set. In the
 compact storage format it is an optional eighth column, after `fields`; older
-seven-column records default to false. New configurations using this option
-require firmware that supports it.
+seven-column records use `"default"`. Unknown types and non-string type values
+are rejected. The earlier `weishaupt_write` boolean and boolean values in the
+eighth storage column are not supported; update and re-upload those command
+definitions. New configurations using this option require firmware that
+supports it.
 
 HTTP, MQTT and cron use the same write builder. For HTTP:
 

@@ -17,18 +17,35 @@
 #include "app/ha_profile.hpp"
 #include "system/logger.hpp"
 
+namespace {
+command_types::WriteType parseWriteType(std::string_view name) {
+  if (name == "default") return command_types::WriteType::standard;
+  if (name == "weishaupt") return command_types::WriteType::weishaupt;
+  return command_types::WriteType::invalid;
+}
+}  // namespace
+
+const char* Command::getWriteTypeName() const {
+  switch (write_type_) {
+    case command_types::WriteType::standard: return "default";
+    case command_types::WriteType::weishaupt: return "weishaupt";
+    default: return "invalid";
+  }
+}
+
 // A 5023 prefix contains destination, PB/SB, NN=9, CRC placeholder and
 // the two-byte parameter ID. Its inner CRC covers ID, value and suffix.
 ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
                                            ebus::ByteView value) const {
   auto prefix = getWriteCmd(manager);
-  if (prefix.empty() || value.empty()) return {};
-  if (weishaupt_write_ &&
+  if (prefix.empty() || value.empty() ||
+      write_type_ == command_types::WriteType::invalid) return {};
+  if (write_type_ == command_types::WriteType::weishaupt &&
       (prefix.size() != 7 || prefix[1] != 0x50 || prefix[2] != 0x23 ||
        prefix[3] != 9 || value.size() != 2)) return {};
   auto result = ebus::makeSequence(prefix);
   result.append(ebus::makeSequence(value));
-  if (weishaupt_write_) {
+  if (write_type_ == command_types::WriteType::weishaupt) {
     const uint8_t suffix[] = {0x5d, 0x01, 0x00, 0x00};
     result.append(ebus::makeSequence(ebus::ByteView(suffix, sizeof(suffix))));
     uint8_t crc = 0;
@@ -508,8 +525,11 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
       PollSequence write_cmd;
       write_cmd.assign(ebus::ByteView(hex_buf, hex_len));
       command.setWriteCmd(std::move(write_cmd), command_manager);
-    } else if (key == "weishaupt_write")
-      command.weishaupt_write_ = r.asBool();
+    } else if (key == "write_type")
+      command.write_type_ = token == ebus::detail::JsonReader::Token::string
+          ? parseWriteType(r.value()) : command_types::WriteType::invalid;
+    else if (key == "weishaupt_write")
+      command.write_type_ = command_types::WriteType::invalid;
     else if (key == "interval")
       command.interval_ = r.asNum<uint16_t>();
     else if (key == "master")
@@ -694,7 +714,8 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader) {
         }
       } break;
       case 7:
-        command.weishaupt_write_ = reader.asBool();
+        command.write_type_ = token == ebus::detail::JsonReader::Token::string
+            ? parseWriteType(reader.value()) : command_types::WriteType::invalid;
         break;
       default:
         reader.skipComposite(token);
@@ -765,10 +786,13 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
                  key.data());
         error = command_eval_error_buf;
       }
-    } else if (key == "weishaupt_write") {
-      if (token != ebus::detail::JsonReader::Token::boolean) {
-        error = "Invalid type for field: weishaupt_write";
+    } else if (key == "write_type") {
+      if (token != ebus::detail::JsonReader::Token::string ||
+          parseWriteType(r.value()) == command_types::WriteType::invalid) {
+        error = "write_type must be default or weishaupt";
       }
+    } else if (key == "weishaupt_write") {
+      error = "Unsupported field: weishaupt_write; use write_type";
     } else if (key == "interval") {
       if (token != ebus::detail::JsonReader::Token::number) {
         snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),

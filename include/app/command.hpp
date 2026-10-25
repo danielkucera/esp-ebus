@@ -16,6 +16,8 @@
 
 namespace command_types {
 
+enum class WriteType : uint8_t { standard, weishaupt, invalid };
+
 #ifndef COMMAND_MAX_FIELDS
 inline constexpr size_t max_fields = 4;
 #else
@@ -69,7 +71,8 @@ class Command {
   ebus::Sequence buildWriteSequence(const class CommandManager& manager,
                                     ebus::ByteView value) const;
 
-  bool usesWeishauptWrite() const { return weishaupt_write_; }
+  command_types::WriteType getWriteType() const { return write_type_; }
+  const char* getWriteTypeName() const;
 
   bool getActive() const;
   const uint16_t& getInterval() const;
@@ -133,7 +136,7 @@ class Command {
       0;  // 0 = none, 1-based index into CommandMmanager::write_cmds_
   uint16_t interval_ = 60;
   bool master_ = false;
-  bool weishaupt_write_ = false;
+  command_types::WriteType write_type_ = command_types::WriteType::standard;
 
   command_types::FieldVector fields_;
 };
