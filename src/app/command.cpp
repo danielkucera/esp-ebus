@@ -33,21 +33,25 @@ const char* Command::getWriteTypeName() const {
   }
 }
 
-// A 5023 prefix contains destination, PB/SB, NN=9, CRC placeholder and
-// the two-byte parameter ID. Its inner CRC covers ID, value and suffix.
 ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
                                            ebus::ByteView value) const {
   auto prefix = getWriteCmd(manager);
-  if (prefix.empty() || value.empty() ||
-      write_type_ == command_types::WriteType::invalid) return {};
-  if (write_type_ == command_types::WriteType::weishaupt &&
-      (prefix.size() != 7 || prefix[1] != 0x50 || prefix[2] != 0x23 ||
-       prefix[3] != 9 || value.size() != 2)) return {};
-  auto result = ebus::makeSequence(prefix);
-  result.append(ebus::makeSequence(value));
-  if (write_type_ == command_types::WriteType::weishaupt) {
+  if (prefix.empty() || value.empty()) return {};
+
+  if (write_type_ == command_types::WriteType::standard) {
+    auto result = ebus::makeSequence(prefix);
+    result.append(ebus::makeSequence(value));
+    return result;
+  } else if (write_type_ == command_types::WriteType::weishaupt) {
+    // A 5023 prefix contains destination, PB/SB, NN=9, CRC placeholder
+    // and the two-byte parameter ID.
+    if (prefix.size() != 7 || prefix[1] != 0x50 || prefix[2] != 0x23 ||
+        prefix[3] != 9 || value.size() != 2) return {};
+    auto result = ebus::makeSequence(prefix);
+    result.append(ebus::makeSequence(value));
     const uint8_t suffix[] = {0x5d, 0x01, 0x00, 0x00};
     result.append(ebus::makeSequence(ebus::ByteView(suffix, sizeof(suffix))));
+    // The inner CRC covers parameter ID, value and suffix.
     uint8_t crc = 0;
     for (size_t i = 5; i < result.size(); ++i) {
       uint8_t byte = result[i];
@@ -62,8 +66,9 @@ ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
     std::copy(result.begin(), result.end(), frame);
     frame[4] = crc;
     return ebus::makeSequence(ebus::ByteView(frame, sizeof(frame)));
+  } else {
+    return {};
   }
-  return result;
 }
 
 const uint32_t& Command::getSessionId() const { return session_id_; }
