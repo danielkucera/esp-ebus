@@ -265,6 +265,12 @@ target_link_libraries(identity_tests PRIVATE
 )
 
 enable_testing()
+find_program(NODE_EXECUTABLE node)
+if(NODE_EXECUTABLE)
+    add_test(NAME config_page_defaults
+        COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/web/config_page_tests.cjs)
+    set_tests_properties(config_page_defaults PROPERTIES ENVIRONMENT "ELECTRON_RUN_AS_NODE=1")
+endif()
 include(CTest)
 # Per-case CTest entries: timeouts apply per case,
 # failures pinpoint, same Catch.cmake module from our Catch2 sources.
