@@ -119,9 +119,9 @@
                 <option value="ff" selected>FF</option>
         </select></div>
         <div><label for="busWindow">Bus Window (us)</label></div>
-        <div><input id="busWindow" type="number" min="4250" max="4500" step="1" class="config"></div>
+        <div><input id="busWindow" type="number" min="4250" max="4500" step="1" class="config" value="4400"></div>
         <div><label for="busOffset">Bus Offset (us)</label></div>
-        <div><input id="busOffset" type="number" min="0" max="200" step="1" class="config"></div>
+        <div><input id="busOffset" type="number" min="0" max="200" step="1" class="config" value="50"></div>
         <div><label><input id="systemInquiry" type="checkbox" class="config">Inquiry Of Existence</label></div>
         <div><label><input id="systemResponse" type="checkbox" class="config">Send Response</label></div>
         <div><label><input id="scanOnStartup" type="checkbox" class="config">Scan On Startup</label></div>
@@ -191,6 +191,11 @@
             for (const el of elements) {
                 if (el.type === 'checkbox') {
                     el.checked = el.defaultChecked;
+                } else if (el.tagName === 'SELECT') {
+                    // Select elements have no defaultValue. Restore the
+                    // declared default option instead of clearing selection.
+                    const index = Array.from(el.options).findIndex(option => option.defaultSelected);
+                    el.selectedIndex = index >= 0 ? index : (el.options.length ? 0 : -1);
                 } else {
                     el.value = el.defaultValue;
                 }
