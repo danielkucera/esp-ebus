@@ -282,8 +282,12 @@ TEST_CASE("Command evaluate accepts raw boolean, rejects raw string",
 }
 
 TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams", "[Command]") {
-  struct Example { const char* destination; const char* parameter; double value;
-                   const char* expected; };
+  struct Example {
+    const char* destination;
+    const char* parameter;
+    double value;
+    const char* expected;
+  };
   const Example examples[] = {
       {"70", "0500", 21, "70502309600500d2005d010000"},
       {"70", "0800", 16, "70502309e00800a0005d010000"},
@@ -302,7 +306,10 @@ TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams", "[Command]"
     auto frame = cmd.buildWriteSequence(command_manager, value);
     std::string hex;
     const char* digits = "0123456789abcdef";
-    for (auto byte : frame) { hex += digits[byte >> 4]; hex += digits[byte & 15]; }
+    for (auto byte : frame) {
+      hex += digits[byte >> 4];
+      hex += digits[byte & 15];
+    }
     REQUIRE(hex == ex.expected);
     REQUIRE(cmd.getVectorFromValue("31").empty());
     REQUIRE(cmd.getVectorFromValue("4").empty());
@@ -326,7 +333,20 @@ TEST_CASE("Standard writes preserve bytes even for a 5023 prefix", "[Command]") 
 }
 
 TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
-  const std::string json = R"({"key":"badwrite","name":"Bad","read_cmd":"085003019e","write_cmd":"70502308ab0500","write_type":"weishaupt","fields":[{"name":"value","profile":"uint16","position":1}]})";
+  const std::string json = R"({
+  "key": "badwrite",
+  "name": "Bad",
+  "read_cmd": "085003019e",
+  "write_cmd": "70502308ab0500",
+  "write_type": "weishaupt",
+  "fields": [
+    {
+      "name": "value",
+      "profile": "uint16",
+      "position": 1
+    }
+  ]
+})";
   JsonReader reader(json);
   Command cmd = Command::fromJson(reader);
   const uint8_t value[] = {0xaa, 0x00};
@@ -356,7 +376,20 @@ TEST_CASE("Write types reject unknown names, non-strings and the old boolean", "
 }
 
 TEST_CASE("Explicit default writes preserve the existing bytes", "[Command]") {
-  const std::string json = R"({"key":"default_type","name":"Default","read_cmd":"085003019e","write_cmd":"70502309ab0500","write_type":"default","fields":[{"name":"value","profile":"uint16","position":1}]})";
+  const std::string json = R"({
+  "key": "default_type",
+  "name": "Default",
+  "read_cmd": "085003019e",
+  "write_cmd": "70502309ab0500",
+  "write_type": "default",
+  "fields": [
+    {
+      "name": "value",
+      "profile": "uint16",
+      "position": 1
+    }
+  ]
+})";
   JsonReader validation(json);
   REQUIRE(Command::evaluate(validation).empty());
   JsonReader reader(json);

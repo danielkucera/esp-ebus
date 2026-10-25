@@ -2,8 +2,8 @@
 
 INTERNAL firmware supports the captured WCM-FS parameter-write format when a
 command explicitly sets `"write_type": "weishaupt"`. Omit this property, or set
-it to `"default"`, to preserve the existing write behavior: append the encoded value
-to `write_cmd` without modifying either byte sequence.
+it to `"default"`, to preserve the existing write behavior: append the encoded
+value to `write_cmd` without modifying either byte sequence.
 
 ## Command definition
 
@@ -64,13 +64,21 @@ Two profiles are appended to the registry without changing existing indices:
 `config/weishaupt-wtc.json` is an optional example for one observed WTC-60
 installation with three WCM-EM 2.1 circuits and two WCM-FS 2.0 controllers.
 It is not installed automatically. Adapt the addresses to your installation.
-The six normal/reduced writes and their readbacks were captured at addresses
-70/75, f0/f5 and 17/1c. The six complete write telegrams are regression fixtures.
-Flow and room measurements use observed 5014 exchanges; the fourth circuit's
-flow-temperature association was checked against the user's display. Its
-requested flow temperature and the active room setpoints are not identified
-and are not included. No measured room temperature is provided for the fourth
-circuit, which has no room sensor. The outside and hot-water values come from
+The example uses these installation-specific addresses:
+
+| Circuit | Location | Write address | Read address | Mixer module |
+| --- | --- | --- | --- | --- |
+| 2 | Downstairs | `70` | `75` | `51` |
+| 3 | Upstairs | `f0` | `f5` | `52` |
+| 4 | Underfloor heating | `17` | `1c` | `53` |
+
+The six normal/reduced writes and their readbacks were captured on this
+installation. The complete write telegrams are regression fixtures.
+Flow and room measurements use observed 5014 exchanges. Circuit 4's
+flow-temperature association was checked against the user's display.
+Circuit 4's requested flow temperature and the active room setpoints are not
+identified and are not included. Circuit 4 has no room sensor, so the example
+provides no measured room temperature for it. The outside and hot-water values come from
 500A broadcasts and were checked against the installation displays.
 
 The checksum was also checked against 16 captured writes. These checks confirm
