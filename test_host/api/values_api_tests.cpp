@@ -4,6 +4,7 @@
 #include <string>
 
 #include "api/values_api.hpp"
+#include "app/ebus_test_helpers.hpp"
 #include "app/command.hpp"
 #include "app/command_manager.hpp"
 #include "app/ebus_test_helpers.hpp"
@@ -158,5 +159,43 @@ TEST_CASE("ValuesApi rejects sending passive match patterns", "[values_api]") {
   REQUIRE(ValuesApi::handleValuesRead(&req) == ESP_OK);
   REQUIRE(req.status == "400 Bad Request");
   REQUIRE(command_manager.findCommand("passive")->getPendingReadId() == 0);
+  command_manager.wipeCommands();
+}
+
+TEST_CASE("ValuesApi rejects writes when the bus queue is full", "[values_api]") {
+  insertTestCommand();
+  auto& controller = getEbusController();
+  auto config = getEbusConfig();
+  config.bus.device = "/dev/null";
+  REQUIRE(controller.configure(config));
+  struct ResetController {
+    ebus::Controller& controller;
+    ebus::EbusConfig config;
+    ~ResetController() { controller.configure(config); }
+  } reset{controller, config};
+
+  // The controller is not started, so queued requests cannot be drained.
+  const ebus::Sequence message{0x50, 0xb5, 0x09, 0x04, 0x0e, 0x33, 0x00, 0x00};
+  bool full = false;
+  for (unsigned i = 0; i < 1024; ++i) {
+    if (controller.enqueue(app::priority::send, message) == 0) {
+      full = true;
+      break;
+    }
+  }
+  REQUIRE(full);
+  auto* command = command_manager.findCommand("01");
+  REQUIRE(command != nullptr);
+  command->setLast(123);
+
+  ValuesApi api(command_manager);
+  httpd_req_t req{};
+  req.body = R"({"key":"01","value":12.5})";
+  req.content_len = static_cast<int>(req.body.size());
+  REQUIRE(ValuesApi::handleValuesWrite(&req) == ESP_OK);
+  REQUIRE(req.status == "503 Service Unavailable");
+  REQUIRE(req.final_body.find("Unable to queue write command") != std::string::npos);
+  REQUIRE(req.final_body.find(R"("status":"successful")") == std::string::npos);
+  REQUIRE(command->getLast() == 123);
   command_manager.wipeCommands();
 }
