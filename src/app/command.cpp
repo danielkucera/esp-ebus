@@ -813,7 +813,7 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
     } else if (key == "write_type") {
       if (token != ebus::detail::JsonReader::Token::string ||
           parseWriteType(r.value()) == command_types::WriteType::invalid) {
-        error = "write_type must be default or weishaupt";
+        error = "unknown write_type";
       }
     } else if (key == "weishaupt_write") {
       error = "Unsupported field: weishaupt_write; use write_type";
