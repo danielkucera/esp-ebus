@@ -498,7 +498,7 @@ TEST_CASE("Weishaupt write opt-in survives storage and JSON export", "[CommandMa
 
 TEST_CASE("Unsupported tabular write types are not registered", "[CommandManager]") {
   command_manager.wipeCommands();
-  const std::string row = R"(["old_bool","Old","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],true])";
+  const std::string row = R"(["invalid_type","Invalid write type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],true])";
   JsonReader reader(row);
   command_manager.insertCommand(Command::fromTabular(reader));
   REQUIRE(command_manager.getCommandCount() == 0);
