@@ -10,6 +10,7 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <memory>
 #include <ebus/detail/json_reader.hpp>
 #include <ebus/detail/json_writer.hpp>
 #include <string>
@@ -399,6 +400,11 @@ bool UpgradeManager::performHttpUpgrade(const std::string& url,
   return true;
 }
 
+struct HttpUpgradeContext {
+  UpgradeManager* self;
+  std::string url;
+};
+
 esp_err_t UpgradeManager::handleHttpUpgrade(httpd_req_t* req) {
   pre_upgrade_done_ = false;
   HttpUtils::StreamingReader sr(req);
@@ -425,17 +431,46 @@ esp_err_t UpgradeManager::handleHttpUpgrade(httpd_req_t* req) {
     return ESP_OK;
   }
 
-  prepareForUpgrade();
-
-  std::string error;
-  if (!performHttpUpgrade(url, error)) {
-    HttpUtils::sendErrorResponse(req, "500 Internal Server Error",
-                                 "upgrade_http", error);
+  if (http_upgrade_running_) {
+    HttpUtils::sendErrorResponse(req, "409 Conflict", "upgrade_http",
+                                 "Upgrade already in progress");
     return ESP_OK;
   }
 
-  sendAndRestart(req, "Upgrade fetched. Restarting...", "upgrade_http");
+  auto* task_ctx = new HttpUpgradeContext{this, url};
+  http_upgrade_running_ = true;
+  if (xTaskCreate(httpUpgradeTask, "http_upgrade", 8192, task_ctx, 5,
+                  nullptr) != pdPASS) {
+    http_upgrade_running_ = false;
+    delete task_ctx;
+    HttpUtils::sendErrorResponse(req, "500 Internal Server Error",
+                                 "upgrade_http", "Failed to start upgrade task");
+    return ESP_OK;
+  }
+
+  HttpUtils::sendSuccessResponse(req, "upgrade_http", "started",
+                                 "Upgrade started. Follow progress in logs.");
   return ESP_OK;
+}
+
+void UpgradeManager::httpUpgradeTask(void* arg) {
+  std::unique_ptr<HttpUpgradeContext> ctx(
+      static_cast<HttpUpgradeContext*>(arg));
+  UpgradeManager* self = ctx->self;
+  self->prepareForUpgrade();
+
+  std::string error;
+  if (!performHttpUpgrade(ctx->url, error)) {
+    logger.error("HTTP upgrade failed: " + error);
+    self->pre_upgrade_done_ = false;
+    self->http_upgrade_running_ = false;
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  logger.info("HTTP upgrade fetched. Restarting...");
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  esp_restart();
 }
 
 void UpgradeManager::sendAndRestart(httpd_req_t* req, const char* message,
