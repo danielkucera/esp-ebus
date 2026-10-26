@@ -13,8 +13,8 @@
     <div class="controls">
         <button id="btnHome">Home</button>
         <button id="btnLoad">Load</button>
-        <button id="btnSave" class="apply">Save</button>
-        <button id="btnSaveFile">Save to File</button>
+        <button id="btnSave" class="apply" disabled>Save</button>
+        <button id="btnSaveFile" disabled>Save to File</button>
         <button id="btnLoadFile">Load from File</button>
         <input type="file" id="fileInput" accept=".json" style="display:none">
         <button id="btnRestart" class="danger">Restart to Apply Changes</button>
@@ -57,9 +57,9 @@
     <fieldset>
         <legend>General</legend>
         <div><label for="thingName">Thing Name</label></div>
-        <div><input id="thingName" type="text" class="config" value="esp-eBus"></div>
+        <div><input id="thingName" type="text" class="config"></div>
         <div><label for="apModePassword">AP Mode Password</label></div>
-        <div><input id="apModePassword" type="password" class="config" value="ebusebus" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');"></div>
+        <div><input id="apModePassword" type="password" class="config" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');"></div>
     </fieldset>
 
     <fieldset>
@@ -81,15 +81,15 @@
         <legend>SNTP</legend>
         <div><label><input id="sntpEnabled" type="checkbox" class="config">SNTP Enabled</label></div>
         <div><label for="sntpServer">SNTP Server</label></div>
-        <div><input id="sntpServer" type="text" class="config" value="pool.ntp.org"></div>
+        <div><input id="sntpServer" type="text" class="config"></div>
         <div><label for="sntpTimezone">SNTP Timezone</label></div>
-        <div><input id="sntpTimezone" type="text" class="config" value="UTC0"></div>
+        <div><input id="sntpTimezone" type="text" class="config"></div>
     </fieldset>
 
     <fieldset>
         <legend>Bus</legend>
         <div><label for="pwmValue">PWM</label></div>
-        <div><input id="pwmValue" type="number" min="1" max="255" step="1" class="config" value="130"></div>
+        <div><input id="pwmValue" type="number" step="1" class="config"></div>
         <div><label for="ebusAddress">eBUS Address</label></div>
         <div><select id="ebusAddress" class="config" aria-label="eBUS Address">
                 <option value="00">00</option>
@@ -116,12 +116,12 @@
                 <option value="f1">F1</option>
                 <option value="f3">F3</option>
                 <option value="f7">F7</option>
-                <option value="ff" selected>FF</option>
+                <option value="ff">FF</option>
         </select></div>
         <div><label for="busWindow">Bus Window (us)</label></div>
-        <div><input id="busWindow" type="number" min="4250" max="4500" step="1" class="config"></div>
+        <div><input id="busWindow" type="number" step="1" class="config"></div>
         <div><label for="busOffset">Bus Offset (us)</label></div>
-        <div><input id="busOffset" type="number" min="0" max="200" step="1" class="config"></div>
+        <div><input id="busOffset" type="number" step="1" class="config"></div>
         <div><label><input id="systemInquiry" type="checkbox" class="config">Inquiry Of Existence</label></div>
         <div><label><input id="systemResponse" type="checkbox" class="config">Send Response</label></div>
         <div><label><input id="scanOnStartup" type="checkbox" class="config">Scan On Startup</label></div>
@@ -186,34 +186,46 @@
             return el.value.trim();
         }
 
+        let configFields = null;
+
+        function enableSaving(enabled) {
+            document.getElementById('btnSave').disabled = !enabled;
+            document.getElementById('btnSaveFile').disabled = !enabled;
+        }
+
         function resetFieldsToDefaultValues() {
-            const elements = document.getElementsByClassName("config");
-            for (const el of elements) {
-                if (el.type === 'checkbox') {
-                    el.checked = el.defaultChecked;
-                } else {
-                    el.value = el.defaultValue;
-                }
+            for (const el of document.getElementsByClassName('config')) {
+                if (el.type === 'checkbox') el.checked = false;
+                else if (el.tagName === 'SELECT') el.selectedIndex = el.options.length ? 0 : -1;
+                else el.value = '';
+            }
+            for (const [id, field] of Object.entries(configFields)) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (field.min !== undefined) el.min = field.min;
+                if (field.max !== undefined) el.max = field.max;
+                setField(id, field.default);
             }
         }
 
         async function loadConfig() {
             setStatus('Loading...');
-            resetFieldsToDefaultValues();
+            enableSaving(false);
+            configFields = null;
             try {
                 const res = await fetch('/api/v1/app/config');
                 if (!res.ok) throw new Error('Load failed');
                 const cfg_obj = await res.json();
-                const cfg = cfg_obj.config || {};
-
-                for (const key in cfg) {
-                    if (cfg.hasOwnProperty(key)) {
-                        setField(key, cfg[key]);
-                    }
+                const required = ['pwmValue', 'busWindow', 'busOffset', 'ebusAddress'];
+                if (!required.every(id => cfg_obj.fields?.[id]?.default !== undefined)) {
+                    throw new Error('Configuration defaults unavailable');
                 }
-                // Passwords are never served (secret scrub): force the
-                // fields empty so a stale/autofilled value can never be
-                // mistaken for stored credentials on save (empty = keep).
+                configFields = cfg_obj.fields;
+                resetFieldsToDefaultValues();
+                for (const [key, value] of Object.entries(cfg_obj.config || {})) {
+                    setField(key, value);
+                }
+                // Empty password fields mean keep the stored credential.
                 for (const id of ['wifiPassword', 'apModePassword', 'mqttPass']) {
                     const el = document.getElementById(id);
                     if (el) {
@@ -221,14 +233,17 @@
                         el.setAttribute('readonly', 'readonly');
                     }
                 }
+                enableSaving(true);
                 setStatus('Loaded');
             } catch (err) {
+                configFields = null;
                 setStatus('Load failed');
                 console.error(err);
             }
         }
 
         async function saveConfig() {
+            if (!configFields) return;
             const payload = {};
 
             setStatus('Saving...');
@@ -253,6 +268,7 @@
         }
 
         function saveConfigToFile() {
+            if (!configFields) return;
             const payload = {};
             const el = document.getElementsByClassName('config');
             for (const e of el) {
@@ -274,6 +290,7 @@
             event.target.value = '';
             setStatus('Loading from file...');
             try {
+                if (!configFields) throw new Error('Load adapter defaults first');
                 const text = await file.text();
                 const cfg_obj = JSON.parse(text);
                 const cfg = cfg_obj.config || cfg_obj;

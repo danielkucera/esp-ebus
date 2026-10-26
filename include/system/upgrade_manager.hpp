@@ -28,6 +28,7 @@ class UpgradeManager {
  private:
   static bool performHttpUpgrade(const std::string& url, std::string& error);
   void prepareForUpgrade();
+  static void httpUpgradeTask(void* arg);
   static void sendAndRestart(httpd_req_t* req, const char* message,
                              const char* id = "upgrade");
   void resetUploadState();
@@ -37,6 +38,7 @@ class UpgradeManager {
   const esp_partition_t* upload_partition_ = nullptr;
   esp_ota_handle_t upload_handle_ = 0;
   bool pre_upgrade_done_ = false;
+  bool http_upgrade_running_ = false;
   size_t upload_bytes_received_ = 0;
   int upload_next_progress_percent_ = 10;
 };
