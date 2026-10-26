@@ -66,6 +66,9 @@ class CommandManager {
 
   void updateData(const ebus::ProtocolInfo& info);
 
+  bool queueWrite(std::string_view key, ebus::ByteView message);
+  void handleWriteResult(const ebus::ProtocolInfo& info);
+
   void fetchValues(const ebus::JsonChunkVisitor& visitor) const;
 
   // Write command storage (separate from Command to save memory)
