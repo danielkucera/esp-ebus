@@ -41,5 +41,7 @@
   {"name": "hex5", "datatype": "HEX5", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "hex6", "datatype": "HEX6", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "hex7", "datatype": "HEX7", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
-  {"name": "hex8", "datatype": "HEX8", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0}
+  {"name": "hex8", "datatype": "HEX8", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
+  {"name": "int16_celsius_div10", "datatype": "INT16", "unit": "°C", "divider": 10, "digits": 1, "min": -50, "max": 180},
+  {"name": "uint16_celsius", "datatype": "UINT16", "unit": "°C", "divider": 1, "digits": 0, "min": 0, "max": 180}
 ]

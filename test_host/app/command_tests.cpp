@@ -280,3 +280,135 @@ TEST_CASE("Command evaluate accepts raw boolean, rejects raw string",
   JsonReader r2(bad);
   REQUIRE_FALSE(Command::evaluate(r2).empty());
 }
+
+TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams", "[Command]") {
+  struct Example {
+    const char* destination;
+    const char* parameter;
+    double value;
+    const char* expected;
+  };
+  const Example examples[] = {
+      {"70", "0500", 21, "70502309600500d2005d010000"},
+      {"70", "0800", 16, "70502309e00800a0005d010000"},
+      {"f0", "0500", 17, "f0502309d00500aa005d010000"},
+      {"f0", "0800", 13, "f050230994080082005d010000"},
+      {"17", "0500", 25, "17502309c40500fa005d010000"},
+      {"17", "0800", 19, "17502309cc0800be005d010000"}};
+  for (const auto& ex : examples) {
+    std::string json = std::string(R"({"key":"room_test","name":"Room","read_cmd":"75502203700500","write_cmd":")") +
+        ex.destination + "50230900" + ex.parameter +
+        R"(","write_type":"weishaupt","interval":60,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"min":5,"max":30}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+    auto value = cmd.getVectorFromValue(std::to_string(ex.value));
+    REQUIRE(value.size() == 2);
+    auto frame = cmd.buildWriteSequence(command_manager, value);
+    std::string hex;
+    const char* digits = "0123456789abcdef";
+    for (auto byte : frame) {
+      hex += digits[byte >> 4];
+      hex += digits[byte & 15];
+    }
+    REQUIRE(hex == ex.expected);
+    REQUIRE(cmd.getVectorFromValue("31").empty());
+    REQUIRE(cmd.getVectorFromValue("4").empty());
+  }
+}
+
+TEST_CASE("Standard writes preserve bytes even for a 5023 prefix", "[Command]") {
+  const char* prefixes[] = {"50b509040e3300", "70502309ab0500"};
+  for (auto prefix : prefixes) {
+    std::string json = std::string(R"({"key":"legacy","name":"Legacy","read_cmd":"085003019e","write_cmd":")") + prefix +
+      R"(","interval":60,"master":false,"fields":[{"name":"value","profile":"uint16","position":1}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+    REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
+    const uint8_t value[] = {0xaa, 0x00};
+    auto frame = cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2));
+    auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
+    expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
+    REQUIRE(frame == expected);
+  }
+}
+
+TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
+  const std::string json = R"({
+  "key": "badwrite",
+  "name": "Bad",
+  "read_cmd": "085003019e",
+  "write_cmd": "70502308ab0500",
+  "write_type": "weishaupt",
+  "fields": [
+    {
+      "name": "value",
+      "profile": "uint16",
+      "position": 1
+    }
+  ]
+})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+  const uint8_t value[] = {0xaa, 0x00};
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)).empty());
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1)).empty());
+  const uint8_t valid_prefix[] = {0x70, 0x50, 0x23, 9, 0, 5, 0};
+  PollSequence prefix;
+  prefix.assign(ebus::ByteView(valid_prefix, 7));
+  cmd.setWriteCmd(std::move(prefix), command_manager);
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1)).empty());
+}
+
+TEST_CASE("Write types reject unknown names and non-strings", "[Command]") {
+  const char* settings[] = {R"("write_type":"other")", R"("write_type":true)",
+      R"("write_type":false)", R"("write_type":null)", R"("write_type":1)",
+      R"("write_type":"default")"};
+  for (auto setting : settings) {
+    const std::string json = std::string(R"({"key":"type","name":"Type","read_cmd":"085003019e","write_cmd":"70502309000500",)") + setting +
+        R"(,"fields":[{"name":"value","profile":"uint16","position":1}]})";
+    JsonReader reader(json);
+    REQUIRE_FALSE(Command::evaluate(reader).empty());
+    JsonReader direct_reader(json);
+    Command cmd = Command::fromJson(direct_reader);
+    const uint8_t value[] = {0xd2, 0};
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)).empty());
+  }
+}
+
+TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
+  const std::string json = R"({
+  "key": "simple_type",
+  "name": "Simple",
+  "read_cmd": "085003019e",
+  "write_cmd": "70502309ab0500",
+  "write_type": "simple",
+  "fields": [
+    {
+      "name": "value",
+      "profile": "uint16",
+      "position": 1
+    }
+  ]
+})";
+  JsonReader validation(json);
+  REQUIRE(Command::evaluate(validation).empty());
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+  REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
+  const uint8_t value[] = {0xaa, 0};
+  auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
+  expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)) == expected);
+}
+
+TEST_CASE("Tabular write types reject boolean and unknown values", "[Command]") {
+  const char* types[] = {"true", "false", "\"other\""};
+  for (auto type : types) {
+    std::string row = std::string(R"(["tab_type","Type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],)") + type + "]";
+    JsonReader reader(row);
+    Command cmd = Command::fromTabular(reader);
+    REQUIRE(cmd.getWriteType() == command_types::WriteType::invalid);
+    const uint8_t value[] = {0xd2, 0};
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)).empty());
+  }
+}

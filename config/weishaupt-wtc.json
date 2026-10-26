@@ -1,0 +1,275 @@
+[
+  {
+    "key": "wtc_flow",
+    "name": "Weishaupt/Boiler/Flow_temperature",
+    "read_cmd": "085003019e",
+    "write_cmd": "",
+    "interval": 10,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "uint16_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "wtc_flue",
+    "name": "Weishaupt/Boiler/Flue_gas_temperature",
+    "read_cmd": "085003019f",
+    "write_cmd": "",
+    "interval": 10,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "uint16_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "wtc_outside",
+    "name": "Weishaupt/Outside_temperature",
+    "read_cmd": "fe500a0d",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int8_celsius",
+        "position": 10
+      }
+    ]
+  },
+  {
+    "key": "wtc_dhw",
+    "name": "Weishaupt/Hot_water_cylinder_temperature",
+    "read_cmd": "fe500a0d",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data1c_celsius",
+        "position": 8
+      }
+    ]
+  },
+  {
+    "key": "hc2_room",
+    "name": "Weishaupt/Circuit_2_Downstairs/Room_temperature",
+    "read_cmd": "51501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 4
+      }
+    ]
+  },
+  {
+    "key": "hc2_flow_set",
+    "name": "Weishaupt/Circuit_2_Downstairs/Target_flow_temperature",
+    "read_cmd": "51501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "hc2_flow",
+    "name": "Weishaupt/Circuit_2_Downstairs/Flow_temperature",
+    "read_cmd": "51501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 3
+      }
+    ]
+  },
+  {
+    "key": "hc2_normal",
+    "name": "Weishaupt/Circuit_2_Downstairs/Normal_room_setpoint",
+    "read_cmd": "75502203700500",
+    "write_cmd": "70502309000500",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "write_type": "weishaupt"
+  },
+  {
+    "key": "hc2_reduced",
+    "name": "Weishaupt/Circuit_2_Downstairs/Reduced_room_setpoint",
+    "read_cmd": "75502203580800",
+    "write_cmd": "70502309000800",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "write_type": "weishaupt"
+  },
+  {
+    "key": "hc3_room",
+    "name": "Weishaupt/Circuit_3_Upstairs/Room_temperature",
+    "read_cmd": "52501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 4
+      }
+    ]
+  },
+  {
+    "key": "hc3_flow_set",
+    "name": "Weishaupt/Circuit_3_Upstairs/Target_flow_temperature",
+    "read_cmd": "52501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": true,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 2
+      }
+    ]
+  },
+  {
+    "key": "hc3_flow",
+    "name": "Weishaupt/Circuit_3_Upstairs/Flow_temperature",
+    "read_cmd": "52501407",
+    "write_cmd": "",
+    "interval": 0,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "data2b_celsius",
+        "position": 3
+      }
+    ]
+  },
+  {
+    "key": "hc3_normal",
+    "name": "Weishaupt/Circuit_3_Upstairs/Normal_room_setpoint",
+    "read_cmd": "f5502203700500",
+    "write_cmd": "f0502309000500",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "write_type": "weishaupt"
+  },
+  {
+    "key": "hc3_reduced",
+    "name": "Weishaupt/Circuit_3_Upstairs/Reduced_room_setpoint",
+    "read_cmd": "f5502203580800",
+    "write_cmd": "f0502309000800",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "write_type": "weishaupt"
+  },
+  {
+    "key": "hc4_flow",
+    "name": "Weishaupt/Circuit_4_Underfloor_heating/Flow_temperature",
+    "read_cmd": "53502203900f00",
+    "write_cmd": "",
+    "interval": 30,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1
+      }
+    ]
+  },
+  {
+    "key": "hc4_normal",
+    "name": "Weishaupt/Circuit_4_Underfloor_heating/Normal_room_setpoint",
+    "read_cmd": "1c502203700500",
+    "write_cmd": "17502309000500",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "write_type": "weishaupt"
+  },
+  {
+    "key": "hc4_reduced",
+    "name": "Weishaupt/Circuit_4_Underfloor_heating/Reduced_room_setpoint",
+    "read_cmd": "1c502203580800",
+    "write_cmd": "17502309000800",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {
+        "name": "value",
+        "profile": "int16_celsius_div10",
+        "position": 1,
+        "min": 5,
+        "max": 30
+      }
+    ],
+    "write_type": "weishaupt"
+  }
+]
