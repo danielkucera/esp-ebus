@@ -50,6 +50,12 @@
             border-bottom: none;
         }
 
+        #logsTable tr.log-restarted td {
+            background: #b00020;
+            color: #fff;
+            font-weight: bold;
+        }
+
         /* For structured JSON messages in logs */
         pre.json-message {
             white-space: pre-wrap;
@@ -194,7 +200,8 @@
                 // Otherwise, treat as plain text
                 messageContent = escapeHtml(logEntry.message);
             }
-            return `<tr><td>${escapeHtml(timestamp)}</td><td>${escapeHtml(logEntry.level)}</td><td>${escapeHtml(sid)}</td><td>${escapeHtml(pid)}</td><td class="message">${messageContent}</td></tr>`;
+            const rowClass = logEntry.logRestart ? ' class="log-restarted"' : '';
+            return `<tr${rowClass}><td>${escapeHtml(timestamp)}</td><td>${escapeHtml(logEntry.level)}</td><td>${escapeHtml(sid)}</td><td>${escapeHtml(pid)}</td><td class="message">${messageContent}</td></tr>`;
 
         }
 
@@ -204,7 +211,7 @@
             const rows = [];
 
             for (const logEntry of storedEntries) {
-                if (!checkedLevels.includes(logEntry.level)) continue;
+                if (!logEntry.logRestart && !checkedLevels.includes(logEntry.level)) continue;
                 renderedLines.push(buildRenderedLine(logEntry));
                 rows.push(buildRenderedRow(logEntry));
             }
@@ -225,7 +232,7 @@
             }
 
             for (const logEntry of newEntries) {
-                if (!checkedLevels.includes(logEntry.level)) continue;
+                if (!logEntry.logRestart && !checkedLevels.includes(logEntry.level)) continue;
                 renderedLines.unshift(buildRenderedLine(logEntry));
                 logsBody.insertAdjacentHTML('afterbegin', buildRenderedRow(logEntry));
             }
@@ -297,6 +304,7 @@
                 // Based only on this response, so a restarted device (lower
                 // timestamps) resets since; empty responses keep the old value.
                 let maxMillis = null;
+                const previousLastSeenMillis = lastSeenMillis;
 
                 for (const logEntry of logItems) {
                     const millis = Number(logEntry.millis);
@@ -305,7 +313,19 @@
                     }
                 }
 
-                const { newEntries, droppedAny } = addFetchedEntries(logItems);
+                const logRestarted = Number.isFinite(previousLastSeenMillis) &&
+                    Number.isFinite(maxMillis) &&
+                    maxMillis < previousLastSeenMillis;
+                // The list is newest-first, so the marker goes in before the new entries.
+                const itemsToAdd = logRestarted
+                    ? [{
+                        millis: maxMillis,
+                        level: 'RESTART',
+                        message: '!!! LOG STREAM RESTARTED: DEVICE UPTIME RESET !!!',
+                        logRestart: true
+                    }, ...logItems]
+                    : logItems;
+                const { newEntries, droppedAny } = addFetchedEntries(itemsToAdd);
                 if (droppedAny) {
                     renderFromStoredData();
                 } else {
