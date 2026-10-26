@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "app/app.hpp"
+#include "app/app_limits.hpp"
 #include "config/app_config_loader.hpp"
 #include "network/http.hpp"
 #include "network/http_utils.hpp"
@@ -318,19 +319,67 @@ void ConfigManager::fetchConfig(const ebus::JsonChunkVisitor& visitor) {
 
   nvs_handle_t handle = 0;
   const esp_err_t open_err = nvs_open(nvs_namespace, NVS_READONLY, &handle);
-  if (open_err != ESP_OK) {
+  // A missing namespace is normal on first setup. Still serve defaults.
+  if (open_err != ESP_OK && open_err != ESP_ERR_NVS_NOT_FOUND) {
     visitor("{}");
     return;
   }
 
+  AppConfig defaults;
+  defaults.reset();
   ebus::detail::JsonWriter writer(visitor);
   {
     auto root = writer.objectScope();
-    auto config = writer.objectScope("config");
-    fillJsonFromNvs(writer, handle);
+    {
+      auto config = writer.objectScope("config");
+      if (open_err == ESP_OK) fillJsonFromNvs(writer, handle);
+    }
+    {
+      auto fields = writer.objectScope("fields");
+      auto field = [&](const char* name, const auto& value) {
+        auto item = writer.objectScope(name);
+        writer.writeField("default", value);
+      };
+      auto numeric = [&](const char* name, unsigned value, unsigned min,
+                         unsigned max) {
+        auto item = writer.objectScope(name);
+        writer.writeField("default", value);
+        writer.writeField("min", min);
+        writer.writeField("max", max);
+      };
+      field("wifiSsid", defaults.network.wifi_ssid.c_str());
+      field("wifiBssid", defaults.network.wifi_bssid.c_str());
+      field("staticIPEnabled", defaults.network.static_ip_enabled);
+      field("ipAddress", defaults.network.ip_address.c_str());
+      field("gateway", defaults.network.gateway.c_str());
+      field("netmask", defaults.network.netmask.c_str());
+      field("dns1", defaults.network.dns1.c_str());
+      field("dns2", defaults.network.dns2.c_str());
+      field("thingName", defaults.mqtt_ha.thing_name.c_str());
+      field("sntpEnabled", defaults.sntp.enabled);
+      field("sntpServer", defaults.sntp.server.c_str());
+      field("sntpTimezone", defaults.sntp.timezone.c_str());
+      numeric("pwmValue", defaults.pwm.value, app::limits::Pwm::min,
+              app::limits::Pwm::max);
+      field("ebusAddress", defaults.bus.address.c_str());
+      numeric("busWindow", defaults.bus.window_us, app::limits::Bus::window_min_us,
+              app::limits::Bus::window_max_us);
+      numeric("busOffset", defaults.bus.offset_us, app::limits::Bus::offset_min_us,
+              app::limits::Bus::offset_max_us);
+      field("systemInquiry", defaults.bus.system_inquiry);
+      field("systemResponse", defaults.bus.system_response);
+      field("scanOnStartup", defaults.bus.scan_on_startup);
+      field("mqttEnabled", defaults.mqtt.enabled);
+      field("mqttServer", defaults.mqtt.server.c_str());
+      field("mqttUser", defaults.mqtt.user.c_str());
+      field("rootTopic", defaults.mqtt.root_topic.c_str());
+      field("haEnabled", defaults.mqtt_ha.enabled);
+      field("httpHeaders", defaults.http.headers.c_str());
+      // Passwords are never returned, including reset defaults.
+    }
   }
   writer.flush();
-  nvs_close(handle);
+  if (open_err == ESP_OK) nvs_close(handle);
 }
 
 bool ConfigManager::writeConfigJson(std::string_view body, std::string& error) {
