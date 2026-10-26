@@ -1,12 +1,12 @@
-# esp-arduino-ebus
+# esp-ebus
 
 ESP-based Wi-Fi firmware for eBUS adapter hardware
 
 **Warning: Do not power your adapter from a power supply on eBus terminals - you will burn the transmit circuit (receive may still work)!**
 
-To get more info navigate to [wiki](https://github.com/danielkucera/esp-arduino-ebus/wiki)
+To get more info navigate to [wiki](https://github.com/danielkucera/esp-ebus/wiki)
 
-`esp-arduino-ebus` is an open-source firmware for [EBUS to WiFi Adapter Module](https://danman.eu/ebus-adapter).  
+`esp-ebus` is an open-source firmware for [EBUS to WiFi Adapter Module](https://danman.eu/ebus-adapter).  
 It turns the adapter into a **network-connected eBUS interface** with TCP, MQTT, HTTP, and Home Assistant support — suitable for monitoring and controlling eBUS-based heating systems.
 
 > ⚠️ **This firmware is designed to run only on supported eBUS adapter boards.**  
@@ -30,8 +30,8 @@ It turns the adapter into a **network-connected eBUS interface** with TCP, MQTT,
 - **INTERNAL** (`esp32-c3-internal`) — autonomous participant: polls,
   commands, MQTT/HA on-device, no external software needed.
 
-Details: wiki [5. Bridge mode](https://github.com/danielkucera/esp-arduino-ebus/wiki/5.-Bridge-mode) and
-[6. INTERNAL firmware](https://github.com/danielkucera/esp-arduino-ebus/wiki/6.-INTERNAL-firmware-current).
+Details: wiki [5. Bridge mode](https://github.com/danielkucera/esp-ebus/wiki/5.-Bridge-mode) and
+[6. INTERNAL firmware](https://github.com/danielkucera/esp-ebus/wiki/6.-INTERNAL-firmware-current).
 
 ---
 
@@ -95,7 +95,7 @@ Supported hardware revisions include multiple ESP32-based eBUS adapter boards ma
 
 ---
 
-## Why Choose esp-arduino-ebus?
+## Why Choose esp-ebus?
 
 - ✅ Designed for **real eBUS adapter hardware**
 - 🔓 Fully **open source**
