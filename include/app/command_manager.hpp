@@ -68,11 +68,6 @@ class CommandManager {
 
   void fetchValues(const ebus::JsonChunkVisitor& visitor) const;
 
-  // Write command storage (separate from Command to save memory)
-  ebus::ByteView getWriteCmd(size_t idx) const;
-  bool addWriteCmd(PollSequence&& cmd);
-  size_t getWriteCmdCount() const;
-
   // Min/Max override storage (separate from Command to save memory)
   float getFieldMinOverride(uint8_t key_id, size_t field_idx) const;
   float getFieldMaxOverride(uint8_t key_id, size_t field_idx) const;
@@ -88,12 +83,6 @@ class CommandManager {
   static constexpr size_t command_capacity_ = COMMAND_CAPACITY;
 #endif
 
-#ifndef WRITE_CMD_CAPACITY
-  static constexpr size_t write_cmd_capacity_ = 16;
-#else
-  static constexpr size_t write_cmd_capacity_ = WRITE_CMD_CAPACITY;
-#endif
-
 #ifndef OVERRIDE_FIELD_CAPACITY
   static constexpr size_t override_field_capacity_ = 16;
 #else
@@ -103,7 +92,6 @@ class CommandManager {
   mutable std::recursive_mutex mutex_;
 
   ebus::StaticVector<Command, command_capacity_> commands_;
-  ebus::StaticVector<PollSequence, write_cmd_capacity_> write_cmds_;
   ebus::StaticVector<FieldOverride, override_field_capacity_> field_overrides_;
 
   DataUpdatedCallback data_updated_callback_ = nullptr;
