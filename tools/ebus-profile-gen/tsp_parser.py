@@ -875,7 +875,6 @@ class TspParser:
         register: Dict[str, Any] = {
             "name": name,
             "rw": "read",
-            "write_cmd": "",
             "fields": [],
             "template": None,
             "template_type": None,

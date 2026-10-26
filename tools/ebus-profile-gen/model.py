@@ -39,7 +39,6 @@ class CommandIR:
     profile_key: Optional[str] = None
     register: str = ""
     rw: str = ""
-    write_cmd: str = ""
     fields: List[FieldIR] = field(default_factory=list)  # inline if not grouped
     unsupported: bool = False
     unsupported_reason: str = ""

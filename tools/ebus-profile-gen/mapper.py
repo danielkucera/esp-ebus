@@ -643,12 +643,12 @@ def commands_to_flat_entries(
 ) -> List[Dict[str, Any]]:
     """Convert FamilyIR commands to config/simulation.json schema entries.
 
-    {key, name, read_cmd, write_cmd, interval, master, 
+    {key, name, zz, id, [nn], wid, interval, master,
      fields: [{name, profile, position, ha_profile}]}
     """
     log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
-    seen_read_cmd: Dict[str, str] = {}
+    seen_read_id: Dict[str, str] = {}
     
     # Try to get MF from aliases if not in meta
     default_mf = 0x00
@@ -699,20 +699,25 @@ def commands_to_flat_entries(
                     data_byte_count += DATATYPE_SIZE.get(dt, 0)
         nn_write = meta.get("write_nn", 3 + data_byte_count)
     
-        # Build full ebus read command: ZZ PB SB NN D1 D2 D3
-        # Format: lowercase hex without spaces, exactly 14 hex chars (7 bytes)
-        # Example: 08b509030d9a00 where:
-        #   ZZ=08 (destination), PB=b5 (source/MF), SB=09, NN=03, D1=0d, D2=9a, D3=00
-        read_cmd = f"{zz:02x}{mf:02x}{pb:02x}{nn_read:02x}{sb_read:02x}{ext_pb:02x}{ext_sb:02x}"
-    
-        # Write command: ZZ PB SB NN D1 D2 D3 (+ runtime data bytes appended by firmware)
-        # Only generate if rw == "write"
-        write_cmd = f"{zz:02x}{mf:02x}{pb:02x}{nn_write:02x}{sb_write:02x}{ext_pb:02x}{ext_sb:02x}" if c.rw == "write" else ""
+        # Compact schema: zz + id (read) / wid (write); NN is derived at
+        # runtime from the id length. Legacy example read 08b509030d9a00
+        # becomes zz=08, id=b5090d9a00 (PB SB D1 D2 D3, NN=03=len(id)-2).
+        zz_hex = f"{zz:02x}"
+        id_hex = f"{mf:02x}{pb:02x}{sb_read:02x}{ext_pb:02x}{ext_sb:02x}"
+        # Write id only when writable; runtime NN = len(wid)-2 + value bytes.
+        wid_hex = (
+            f"{mf:02x}{pb:02x}{sb_write:02x}{ext_pb:02x}{ext_sb:02x}"
+            if c.rw == "write"
+            else ""
+        )
+        # Explicit read NN only when it differs from the derived len(id)-2
+        # (the read tail is always 3 bytes, NN defaults to 0x03).
+        nn_hex = f"{nn_read:02x}" if nn_read != 3 else ""
     
         if c.rw == "write" and "write_nn" not in meta:
             log.debug(
                 "command",
-                "write_cmd NN computed from datatype size",
+                "write NN computed from datatype size",
                 action="write_cmd_nn_from_datatype",
                 name=c.name,
                 key=f"{idx:03d}",
@@ -724,11 +729,12 @@ def commands_to_flat_entries(
 
         log.debug(
             "command",
-            "write command generated" if write_cmd else "no write command (read-only)",
-            action="write_cmd_generated" if write_cmd else "read_only",
+            "write id generated" if wid_hex else "no write command (read-only)",
+            action="write_cmd_generated" if wid_hex else "read_only",
             name=c.name,
-            read_cmd=read_cmd,
-            write_cmd=write_cmd,
+            zz=zz_hex,
+            id=id_hex,
+            wid=wid_hex,
             rw=c.rw,
         )
         
@@ -781,33 +787,39 @@ def commands_to_flat_entries(
             )
 
         command_name = _format_command_name(c.name, namespace)
-        entry = {
+        entry: Dict[str, Any] = {
             "key": key,
             "name": command_name,
-            "read_cmd": read_cmd,
-            "write_cmd": write_cmd,
-            "interval": 0,  # Default to passive only
-            "master": False,  # Default
-            "fields": fields,
+            "zz": zz_hex,
+            "id": id_hex,
         }
+        if nn_hex:
+            entry["nn"] = nn_hex
+        if wid_hex:
+            entry["wid"] = wid_hex
+        entry["interval"] = 0  # Default to passive only
+        entry["master"] = False  # Default
+        entry["fields"] = fields
 
         # Deduplicate namespace collisions: same model in multiple namespaces
-        # produces identical read_cmd + fields. Keep all variants but log them
+        # produces identical zz+id + fields. Keep all variants but log them
         # so the user can curate by hardware/software version.
-        duplicate = seen_read_cmd.get(read_cmd)
+        read_key = zz_hex + id_hex
+        duplicate = seen_read_id.get(read_key)
         if duplicate is not None:
             log.debug(
                 "command",
-                "namespace collision: same read_cmd in another variant",
+                "namespace collision: same zz+id in another variant",
                 action="namespace_collision",
                 key=key,
                 name=command_name,
                 namespace=namespace,
-                read_cmd=read_cmd,
+                zz=zz_hex,
+                id=id_hex,
                 collides_with=duplicate,
             )
         else:
-            seen_read_cmd[read_cmd] = key
+            seen_read_id[read_key] = key
         entries.append(entry)
 
         log.info(
@@ -817,8 +829,9 @@ def commands_to_flat_entries(
             key=key,
             name=command_name,
             namespace=namespace,
-            read_cmd=read_cmd,
-            write_cmd=write_cmd,
+            zz=zz_hex,
+            id=id_hex,
+            wid=wid_hex,
             rw=c.rw,
             fields=len(fields),
         )
@@ -1207,7 +1220,6 @@ def build_profiles_and_commands(
             profile_key=None,
             register=reg_str,
             rw=rw,
-            write_cmd="",  # Will be regenerated in commands_to_flat_entries
             fields=field_irs,
             unsupported=unsupported,
             unsupported_reason=unsupported_reason,

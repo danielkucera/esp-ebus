@@ -46,7 +46,7 @@ def validate_log(
 
     Any record that indicates the output is not ready to use becomes an issue:
     defaulted/unsupported type mappings, emitted template definitions, skipped
-    inherited bases, and read_cmd collisions. When profile and command entries
+    inherited bases, and zz+id collisions. When profile and command entries
     are supplied, referenced profile names are cross-checked for existence.
     """
     issues: List[str] = []
@@ -79,10 +79,18 @@ def validate_log(
                 f"{rec.get('name')!r}"
             )
 
-        if action == "emitted" and rec.get("rw") == "write" and not rec.get("write_cmd"):
+        if action == "emitted" and rec.get("rw") == "write" and not rec.get("wid"):
             issues.append(
-                f"[{stage}] writable command has no write_cmd: {rec.get('name')!r}"
+                f"[{stage}] writable command has no wid: {rec.get('name')!r}"
             )
+
+        if action == "emitted" and rec.get("zz") is not None:
+            id_hex = rec.get("id", "")
+            if not (4 <= len(id_hex) <= 12 and len(id_hex) % 2 == 0):
+                issues.append(
+                    f"[{stage}] id must be 2..6 bytes: "
+                    f"{rec.get('name')!r} ({id_hex!r})"
+                )
 
     if profiles_entries is not None and commands_entries is not None:
         known = {p.get("name") for p in profiles_entries}
