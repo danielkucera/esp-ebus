@@ -463,3 +463,43 @@ TEST_CASE("CommandManager removeFieldOverrides drains pool for a key",
 
   command_manager.wipeCommands();
 }
+
+TEST_CASE("Weishaupt write opt-in survives storage and JSON export", "[CommandManager]") {
+  command_manager.wipeCommands();
+  const std::string json = R"({
+  "key": "stored_wcm",
+  "name": "WCM",
+  "read_cmd": "75502203700500",
+  "write_cmd": "70502309000500",
+  "write_type": "weishaupt",
+  "interval": 60,
+  "master": false,
+  "fields": [
+    {
+      "name": "value",
+      "profile": "int16_celsius_div10",
+      "position": 1
+    }
+  ]
+})";
+  JsonReader reader(json);
+  command_manager.insertCommand(Command::fromJson(reader));
+  REQUIRE(command_manager.saveCommands() > 0);
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() > 0);
+  const auto* cmd = command_manager.findCommand("stored_wcm");
+  REQUIRE(cmd != nullptr);
+  REQUIRE(cmd->getWriteType() == command_types::WriteType::weishaupt);
+  std::string exported;
+  command_manager.fetchCommands([&](std::string_view chunk) { exported += chunk; });
+  REQUIRE(exported.find("\"write_type\":\"weishaupt\"") != std::string::npos);
+  command_manager.wipeCommands();
+}
+
+TEST_CASE("Unsupported tabular write types are not registered", "[CommandManager]") {
+  command_manager.wipeCommands();
+  const std::string row = R"(["invalid_type","Invalid write type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],true])";
+  JsonReader reader(row);
+  command_manager.insertCommand(Command::fromTabular(reader));
+  REQUIRE(command_manager.getCommandCount() == 0);
+}

@@ -731,9 +731,12 @@ void Mqtt::handleWrite(std::string_view payload) {
 
     if (!value_bytes.empty()) {
       ebus::Sequence full_write =
-          ebus::makeSequence(command->getWriteCmd(command_manager));
-      full_write.append(value_bytes);
+          command->buildWriteSequence(command_manager, value_bytes);
 
+      if (full_write.empty()) {
+        publishResponse("write", "Invalid write command format");
+        return;
+      }
       getEbusController().enqueue(app::priority::send, full_write);
       publishStream("response", 0, false,
                     [command, key_view](const ebus::JsonChunkVisitor& v) {
@@ -804,8 +807,11 @@ void Mqtt::handleDirectWrite(std::string_view key, std::string_view val_view) {
 
   if (!value_bytes.empty()) {
     ebus::Sequence full_write =
-        ebus::makeSequence(command->getWriteCmd(command_manager));
-    full_write.append(value_bytes);
+        command->buildWriteSequence(command_manager, value_bytes);
+    if (full_write.empty()) {
+      logger.warn("Invalid write command format");
+      return;
+    }
     getEbusController().enqueue(app::priority::send, full_write);
     requestCommandRead(*command);
     char buf[128];

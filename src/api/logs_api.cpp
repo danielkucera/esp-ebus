@@ -2,8 +2,11 @@
 
 #if defined(EBUS_INTERNAL)
 
+#include <esp_timer.h>
+
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 #include "network/http.hpp"
 #include "network/http_utils.hpp"
@@ -58,6 +61,10 @@ esp_err_t LogsApi::handleLogs(httpd_req_t* req) {
       }
     }
   }
+  // A since value beyond the current uptime comes from before a restart.
+  constexpr uint64_t restart_margin_ms = 1000;
+  const uint64_t uptime_ms = esp_timer_get_time() / 1000ULL;
+  if (since_millis > uptime_ms + restart_margin_ms) since_millis = 0;
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   instance_->logger_.fetchLogs(

@@ -81,8 +81,12 @@ esp_err_t ValuesApi::handleValuesWrite(httpd_req_t* req) {
   ebus::Sequence value_bytes = command->getVectorFromJson(body_sv);
   if (!value_bytes.empty()) {
     ebus::Sequence full_write =
-        ebus::makeSequence(command->getWriteCmd(instance_->command_manager_));
-    full_write.append(value_bytes);
+        command->buildWriteSequence(instance_->command_manager_, value_bytes);
+    if (full_write.empty()) {
+      HttpUtils::sendErrorResponse(req, "400 Bad Request", "write",
+                                   "Invalid write command format");
+      return ESP_OK;
+    }
     getEbusController().enqueue(app::priority::send, full_write);
     requestCommandRead(*command);
     HttpUtils::sendSuccessResponse(req, "write");

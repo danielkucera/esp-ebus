@@ -520,9 +520,12 @@ void Cron::tick() {
       }
 
       ebus::Sequence full_write =
-          ebus::makeSequence(command->getWriteCmd(command_manager));
-      full_write.append(value_bytes);
+          command->buildWriteSequence(command_manager, value_bytes);
 
+      if (full_write.empty()) {
+        logger.warn("Cron skipped: invalid write command format");
+        continue;
+      }
       getEbusController().enqueue(app::priority::send, full_write);
 
       char info_buf[160];
