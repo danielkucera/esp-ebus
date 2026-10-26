@@ -1,4 +1,4 @@
-// common.js - Shared JavaScript utilities for esp-arduino-ebus web UI
+// common.js - Shared JavaScript utilities for esp-ebus web UI
 
 /**
  * Navigates to the home page ('/').
