@@ -661,8 +661,13 @@ void Mqtt::handleRead(std::string_view payload) {
 
   Command* command = command_manager.findCommand(key_view);
   if (command != nullptr) {
-    requestCommandRead(*command);  // Queue an actual one-shot bus read
-    handleValueUpdate(key_view);
+    if (!command->getActive()) {
+      publishResponse("read", "Passive command: waiting for bus traffic");
+    } else if (!requestCommandRead(*command)) {
+      publishResponse("read", "Unable to queue bus read");
+    } else {
+      handleValueUpdate(key_view);
+    }
   } else {  // Use snprintf for error response
     char err_buf[128];
     snprintf(err_buf, sizeof(err_buf), "key '%.*s' not found",

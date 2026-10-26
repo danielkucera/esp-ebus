@@ -210,3 +210,62 @@ TEST_CASE("ValuesApi rejects writes when the bus queue is full", "[values_api]")
   REQUIRE(command->getPendingReadId() == 0);
   command_manager.wipeCommands();
 }
+
+TEST_CASE("Rejected manual reads preserve an already pending response",
+          "[values_api]") {
+  insertTestCommand();
+  auto& controller = getEbusController();
+  auto config = getEbusConfig();
+  config.bus.device = "/dev/null";
+  REQUIRE(controller.configure(config));
+  struct ResetController {
+    ebus::Controller& controller;
+    ebus::EbusConfig config;
+    ~ResetController() { controller.configure(config); }
+  } reset{controller, config};
+  ValuesApi api(command_manager);
+  auto* command = command_manager.findCommand("01");
+  uint32_t pending_id = 0;
+
+  SECTION("A read is already pending") {
+    httpd_req_t req{};
+    req.body = R"({"key":"01"})";
+    req.content_len = static_cast<int>(req.body.size());
+    REQUIRE(ValuesApi::handleValuesRead(&req) == ESP_OK);
+    REQUIRE(req.status == "200 OK");
+    pending_id = command->getPendingReadId();
+    REQUIRE(pending_id != 0);
+  }
+  SECTION("No read is pending") {
+    REQUIRE(command->getPendingReadId() == 0);
+  }
+
+  const ebus::Sequence message{0x50, 0xb5, 0x09, 0x04, 0x0e, 0x33, 0x00, 0x00};
+  bool full = false;
+  for (unsigned i = 0; i < 1024; ++i) {
+    if (controller.enqueue(app::priority::send, message) == 0) {
+      full = true;
+      break;
+    }
+  }
+  REQUIRE(full);
+
+  httpd_req_t req{};
+  req.body = R"({"key":"01"})";
+  req.content_len = static_cast<int>(req.body.size());
+  REQUIRE(ValuesApi::handleValuesRead(&req) == ESP_OK);
+  REQUIRE(req.status == "503 Service Unavailable");
+  REQUIRE(command->getPendingReadId() == pending_id);
+
+  if (pending_id != 0) {
+    const uint8_t response[] = {2, 0, 21};
+    ebus::ProtocolInfo info{};
+    info.session_id = pending_id;
+    info.slave_view = ebus::ByteView(response, sizeof(response));
+    command_manager.updateData(info);
+    REQUIRE(command->getPendingReadId() == 0);
+    REQUIRE(command->getData().size() == 2);
+    REQUIRE(command->getData()[1] == 21);
+  }
+  command_manager.wipeCommands();
+}
