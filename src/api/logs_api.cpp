@@ -2,8 +2,11 @@
 
 #if defined(EBUS_INTERNAL)
 
+#include <esp_random.h>
+
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 #include "network/http.hpp"
 #include "network/http_utils.hpp"
@@ -14,6 +17,12 @@ namespace {
 
 // cppcheck-suppress syntaxError
 extern const char logs_html_start[] asm("_binary_logs_html_start");
+
+// Random per boot; identifies the log session across device restarts.
+uint32_t bootId() {
+  static const uint32_t id = esp_random();
+  return id;
+}
 
 }  // namespace
 
@@ -56,9 +65,21 @@ esp_err_t LogsApi::handleLogs(httpd_req_t* req) {
                                 sizeof(since_buffer)) == ESP_OK) {
         since_millis = std::strtoull(since_buffer, nullptr, 10);
       }
+      // A client holding a different boot id talks to a restarted device, so
+      // its "since" value refers to an older uptime clock.
+      char boot_buffer[16] = {0};
+      if (httpd_query_key_value(query_buf, "boot", boot_buffer,
+                                sizeof(boot_buffer)) == ESP_OK &&
+          std::strtoul(boot_buffer, nullptr, 16) != bootId()) {
+        since_millis = 0;
+      }
     }
   }
+  char boot_header[16];
+  std::snprintf(boot_header, sizeof(boot_header), "%08x",
+                static_cast<unsigned>(bootId()));
   httpd_resp_set_type(req, "application/json;charset=utf-8");
+  httpd_resp_set_hdr(req, "X-Boot-Id", boot_header);
   HttpUtils::applyCustomHeaders(req);
   instance_->logger_.fetchLogs(
       [req](std::string_view chunk) {

@@ -104,6 +104,7 @@
         let lastUpdateTime = '';
         let showDate = false;
         let lastSeenMillis = null;
+        let bootId = null;
         let latestTimeRelation = null;
         let latestMillisMinusTime = null;
         let timeRelationRequested = false;
@@ -284,13 +285,25 @@
             const statusEl = document.getElementById('status');
             try {
                 statusEl.textContent = (lastUpdateTime || 'Connecting…');
-                let url = '/api/v1/app/logs';
+                const params = [];
                 if (Number.isFinite(lastSeenMillis)) {
-                    url += `?since=${encodeURIComponent(String(lastSeenMillis + 1))}`;
+                    params.push(`since=${encodeURIComponent(String(lastSeenMillis + 1))}`);
                 }
+                if (bootId) {
+                    params.push(`boot=${encodeURIComponent(bootId)}`);
+                }
+                const url = '/api/v1/app/logs' + (params.length ? '?' + params.join('&') : '');
 
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Network response was not ok');
+                const responseBootId = response.headers.get('X-Boot-Id');
+                if (responseBootId && responseBootId !== bootId) {
+                    if (bootId) {
+                        // Device restarted: its uptime clock restarted too.
+                        lastSeenMillis = null;
+                    }
+                    bootId = responseBootId;
+                }
                 const data = await response.json();
                 const logItems = Array.isArray(data) ? data : (Array.isArray(data.logs) ? data.logs : []);
 
