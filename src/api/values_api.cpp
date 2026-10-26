@@ -87,12 +87,11 @@ esp_err_t ValuesApi::handleValuesWrite(httpd_req_t* req) {
                                    "Invalid write command format");
       return ESP_OK;
     }
-    if (getEbusController().enqueue(app::priority::send, full_write) == 0) {
+    if (!instance_->command_manager_.queueWrite(key, full_write)) {
       HttpUtils::sendErrorResponse(req, "503 Service Unavailable", "write",
                                    "Unable to queue write command");
       return ESP_OK;
     }
-    requestCommandRead(*command);
     HttpUtils::sendSuccessResponse(req, "write");
   } else {
     HttpUtils::sendErrorResponse(req, "400 Bad Request", "write",

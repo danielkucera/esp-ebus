@@ -737,7 +737,7 @@ void Mqtt::handleWrite(std::string_view payload) {
         publishResponse("write", "Invalid write command format");
         return;
       }
-      if (getEbusController().enqueue(app::priority::send, full_write) == 0) {
+      if (!command_manager.queueWrite(command->getKey(), full_write)) {
         publishResponse("write", "Unable to queue write command");
         return;
       }
@@ -754,7 +754,6 @@ void Mqtt::handleWrite(std::string_view payload) {
                                command->getName().data());
                       writer.writeField("status", status_buf);
                     });
-      requestCommandRead(*command);
     } else {
       // Use snprintf for error response
       publishStream("response", 0, false,
@@ -815,11 +814,10 @@ void Mqtt::handleDirectWrite(std::string_view key, std::string_view val_view) {
       logger.warn("Invalid write command format");
       return;
     }
-    if (getEbusController().enqueue(app::priority::send, full_write) == 0) {
+    if (!command_manager.queueWrite(command->getKey(), full_write)) {
       logger.warn("[MQTT] Unable to queue write command");
       return;
     }
-    requestCommandRead(*command);
     char buf[128];
     snprintf(buf, sizeof(buf), "[MQTT] Scheduled write for '%.*s'",
              (int)key.size(), key.data());

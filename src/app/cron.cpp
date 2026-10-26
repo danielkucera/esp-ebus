@@ -526,7 +526,7 @@ void Cron::tick() {
         logger.warn("Cron skipped: invalid write command format");
         continue;
       }
-      if (getEbusController().enqueue(app::priority::send, full_write) == 0) {
+      if (!command_manager.queueWrite(command->getKey(), full_write)) {
         logger.warn("Cron skipped: unable to queue write command");
         continue;
       }

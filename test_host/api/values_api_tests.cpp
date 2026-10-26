@@ -17,8 +17,8 @@ std::string makeCommandJson() {
   return R"({
     "key":"01",
     "name":"Outside_Temperature",
-    "read_cmd":"fe070009",
-    "write_cmd":"50b509040e3300",
+    "read_cmd":"50b509030d3300",
+    "write_cmd":"50b509050e3300",
     "interval":60,
     "master":false,
     "fields":[
@@ -84,6 +84,15 @@ TEST_CASE("ValuesApi reads and writes by key", "[values_api]") {
   REQUIRE(write_req.final_body.find(R"("id":"write")") != std::string::npos);
   REQUIRE(write_req.final_body.find(R"("status":"successful")") !=
           std::string::npos);
+
+  auto* command = command_manager.findCommand("01");
+  REQUIRE(command->getWriteSessionId() != 0);
+  REQUIRE(command->getPendingReadId() == 0);
+  ebus::ProtocolInfo write_result{};
+  write_result.session_id = command->getWriteSessionId();
+  command_manager.handleWriteResult(write_result);
+  REQUIRE(command->getWriteSessionId() == 0);
+  REQUIRE(command->getPendingReadId() != 0);
 
   httpd_req_t list_req{};
   REQUIRE(ValuesApi::handleValues(&list_req) == ESP_OK);
@@ -197,5 +206,7 @@ TEST_CASE("ValuesApi rejects writes when the bus queue is full", "[values_api]")
   REQUIRE(req.final_body.find("Unable to queue write command") != std::string::npos);
   REQUIRE(req.final_body.find(R"("status":"successful")") == std::string::npos);
   REQUIRE(command->getLast() == 123);
+  REQUIRE(command->getWriteSessionId() == 0);
+  REQUIRE(command->getPendingReadId() == 0);
   command_manager.wipeCommands();
 }

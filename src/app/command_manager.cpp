@@ -19,6 +19,7 @@
 #include <unistd.h>
 #endif
 
+#include "app/command_read.hpp"
 #include "app/mqtt.hpp"
 #include "system/logger.hpp"
 
@@ -477,6 +478,31 @@ void CommandManager::updateData(const ebus::ProtocolInfo& info) {
 
   MatchingCommands matching_commands = findPassiveCommands(info.master_view);
   for (Command* cmd : matching_commands) update(cmd, info);
+}
+
+bool CommandManager::queueWrite(std::string_view key, ebus::ByteView message) {
+  // Register the session before its completion can be handled on another task.
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  Command* command = findCommand(key);
+  if (command == nullptr) return false;
+
+  const auto session_id = getEbusController().enqueue(app::priority::send, message);
+  if (session_id == 0) return false;
+  command->setWriteSessionId(session_id);
+  return true;
+}
+
+void CommandManager::handleWriteResult(const ebus::ProtocolInfo& info) {
+  // An error can be followed by a successful library retry of the same session.
+  if (info.is_error || info.session_id == 0) return;
+  std::lock_guard<std::recursive_mutex> lock(mutex_);
+  for (auto& command : commands_) {
+    if (command.getWriteSessionId() != info.session_id) continue;
+    // Ignore duplicate completions and results from older writes.
+    command.setWriteSessionId(0);
+    requestCommandRead(command);
+    break;
+  }
 }
 
 void CommandManager::fetchValues(const ebus::JsonChunkVisitor& visitor) const {
