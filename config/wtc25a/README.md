@@ -16,6 +16,50 @@ All three files use the same format and can be merged or loaded separately. Tota
 
 Keys come from one common numbering, so they are unique across the three files: loading several of them never collides, but together they must still fit the capacity limits above.
 
+## Required profiles
+
+The command files reference profiles that are **not part of the built-in profile set**. They have to be added as user overlays and the firmware rebuilt (see `profiles/README.md`, section "User Overlays"). The overlay files `profiles/*_user.json` are git-ignored, so create them locally with the entries below. Commands that reference a missing profile cannot be used.
+
+### `wtc25a.json` – `profiles/ha_profiles_user.json`
+
+No extra data profile is needed; five Home Assistant profiles are:
+
+| Profile | Component | Used for |
+|---|---|---|
+| `sensor_diagnostic` | sensor, diagnostic category | raw/diagnostic values (status bytes, holiday month readback) |
+| `sensor_measurement` | sensor, `measurement` state class | plain measurements (burner load) |
+| `number_generic` | number, box mode, step 1 | writable integers (holiday day/month, DHW setpoint) |
+| `sensor_enum_burner_phase` | sensor, `enum` | burner phase: 0 Off · 2 PrePurgeSpeed · 4 IgnitionSpeed · 6 Running · 9 PostPurge |
+| `sensor_enum_program_mode` | sensor, `enum` | program selector: 1 Standby · 3 Normal · 4 Reduced · 5 Summer · 12 Program 2 |
+
+```json
+[
+  {"name": "sensor_diagnostic", "component": "sensor", "device_class": "", "entity_category": "diagnostic", "mode": "auto", "state_class": "", "step": 0, "payload_on": 0, "payload_off": 0, "key_value_pairs": [], "key_value_count": 0, "default_key": 0},
+  {"name": "sensor_measurement", "component": "sensor", "device_class": "", "entity_category": "", "mode": "auto", "state_class": "measurement", "step": 0, "payload_on": 0, "payload_off": 0, "key_value_pairs": [], "key_value_count": 0, "default_key": 0},
+  {"name": "number_generic", "component": "number", "device_class": "", "entity_category": "", "mode": "box", "state_class": "", "step": 1, "payload_on": 0, "payload_off": 0, "key_value_pairs": [], "key_value_count": 0, "default_key": 0},
+  {"name": "sensor_enum_burner_phase", "component": "sensor", "device_class": "enum", "entity_category": "diagnostic", "mode": "auto", "state_class": "", "step": 0, "payload_on": 0, "payload_off": 0,
+   "key_value_pairs": [{"key": 0, "value": "Off"}, {"key": 2, "value": "PrePurgeSpeed"}, {"key": 4, "value": "IgnitionSpeed"}, {"key": 6, "value": "Running"}, {"key": 9, "value": "PostPurge"}], "key_value_count": 5, "default_key": 0},
+  {"name": "sensor_enum_program_mode", "component": "sensor", "device_class": "enum", "entity_category": "diagnostic", "mode": "auto", "state_class": "", "step": 0, "payload_on": 0, "payload_off": 0,
+   "key_value_pairs": [{"key": 1, "value": "Standby"}, {"key": 3, "value": "Normal"}, {"key": 4, "value": "Reduced"}, {"key": 5, "value": "Summer"}, {"key": 12, "value": "Program 2"}], "key_value_count": 5, "default_key": 1}
+]
+```
+
+A HA profile holds at most **5 key/value pairs** (`max_key_value_pairs`), which is why the program selector lists only the values seen on this installation. Add other values (11 Program 1, 13 Program 3, ...) only by replacing existing ones, or raise the limit in the firmware.
+
+### Other files – `profiles/data_profiles_user.json`
+
+The installer and unused archives also need extra data profiles, in addition to the HA profiles above:
+
+| Profile | Datatype | Unit | Divider | Digits | Min / max | Needed by |
+|---|---|---|---|---|---|---|
+| `int16_celsius` | INT16 | °C | 1 | 0 | −50 / 180 | installer, unused |
+| `uint16_min` | UINT16 | min | 1 | 0 | 0 / 0 | installer |
+| `uint16_s` | UINT16 | s | 1 | 0 | 0 / 0 | unused |
+| `uint16_percent` | UINT16 | % | 1 | 0 | 0 / 100 | unused |
+| `int16_div10` | INT16 | (none) | 10 | 1 | −100 / 100 | unused |
+
+Each entry uses the format `{"name": ..., "datatype": ..., "unit": ..., "divider": ..., "digits": ..., "min": ..., "max": ...}`. `min` / `max` can also be set per command field.
+
 ## Legend
 
 - **Level**: *user* = setting of the user menu; *installer* = installer setting, do not change lightly.
