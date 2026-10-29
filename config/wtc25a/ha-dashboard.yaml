@@ -1,0 +1,289 @@
+title: Chaudière
+path: chaudiere2
+type: sections
+max_columns: 3
+badges: []
+sections:
+  - type: grid
+    cards:
+      - type: conditional
+        conditions:
+          - condition: state
+            entity: binary_sensor.chaudiere_defaut
+            state: "on"
+        card:
+          type: markdown
+          content: |
+            ## ⚠️ Défaut signalé par la chaudière
+
+            Vérifie l'afficheur de la chaudière.
+        grid_options:
+          columns: 12
+      - type: heading
+        heading: État
+        heading_style: title
+        icon: mdi:water-boiler
+      - type: tile
+        entity: binary_sensor.chaudiere_flamme
+        name: Flamme
+        icon: mdi:fire
+        color: red
+        grid_options:
+          columns: 6
+      - type: tile
+        entity: binary_sensor.chaudiere_pompe
+        name: Pompe
+        icon: mdi:pump
+        color: blue
+        grid_options:
+          columns: 6
+      - type: tile
+        entity: binary_sensor.chaudiere_circuit_ecs
+        name: Circuit eau chaude
+        icon: mdi:shower-head
+        color: cyan
+        grid_options:
+          columns: 6
+      - type: tile
+        entity: sensor.esp_ebus_boiler_burner_phase
+        name: Phase du brûleur
+        icon: mdi:cog-play
+        color: orange
+        grid_options:
+          columns: 6
+      - type: gauge
+        name: Départ
+        entity: sensor.esp_ebus_boiler_temperature_flow
+        min: 0
+        max: 90
+        needle: true
+        segments:
+          - from: 0
+            color: "#3498db"
+          - from: 30
+            color: "#27ae60"
+          - from: 65
+            color: "#f39c12"
+          - from: 80
+            color: "#e74c3c"
+        grid_options:
+          columns: 4
+      - type: gauge
+        name: Eau chaude
+        entity: sensor.esp_ebus_boiler_temperature_dhw
+        min: 0
+        max: 70
+        needle: true
+        segments:
+          - from: 0
+            color: "#3498db"
+          - from: 40
+            color: "#27ae60"
+          - from: 60
+            color: "#f39c12"
+        grid_options:
+          columns: 4
+      - type: gauge
+        name: Charge
+        entity: sensor.esp_ebus_boiler_burner_load
+        min: 0
+        max: 100
+        grid_options:
+          columns: 4
+      - type: heading
+        heading: Relance eBUS
+        heading_style: title
+        icon: mdi:fire-alert
+      - type: tile
+        entity: binary_sensor.demande_chauffage_pieces
+        name: Demande des pièces
+        icon: mdi:radiator
+        color: orange
+        grid_options:
+          columns: 6
+      - type: tile
+        entity: input_boolean.chaudiere_relance
+        name: Relance en cours
+        icon: mdi:fire-alert
+        color: red
+        tap_action:
+          action: more-info
+        grid_options:
+          columns: 6
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - type: section
+            label: Valeurs de base (retour après relance)
+          - entity: input_number.chaudiere_base_normale
+            name: Base normale
+          - entity: input_number.chaudiere_base_reduite
+            name: Base réduite
+          - type: section
+            label: Relance
+          - entity: input_number.chaudiere_ecart_relance
+            name: Écart ajouté aux valeurs de base
+          - entity: script.chaudiere_restaurer_consignes
+            name: Restaurer les consignes de base
+        grid_options:
+          columns: 12
+  - type: grid
+    cards:
+      - type: heading
+        heading: Régulateur
+        heading_style: title
+        icon: mdi:thermostat
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - type: section
+            label: Chauffage – consignes
+          - entity: number.esp_ebus_wtc_heating_normal_setpoint
+            name: Consigne normale (171)
+          - entity: number.esp_ebus_wtc_heating_reduced_setpoint
+            name: Consigne réduite (172)
+          - entity: number.esp_ebus_wtc_heating_frost_protection
+            name: Protection antigel
+          - entity: number.esp_ebus_wtc_heating_summer_winter_changeover
+            name: Commutation été / hiver
+          - type: section
+            label: Chauffage – état
+          - entity: sensor.esp_ebus_wtc_heating_room_temperature
+            name: Ambiante
+          - entity: sensor.esp_ebus_wtc_heating_room_setpoint_active
+            name: Consigne ambiance (active)
+          - entity: sensor.esp_ebus_wtc_heating_heat_demand
+            name: Demande de chaleur
+          - entity: sensor.esp_ebus_wtc_heating_supply_setpoint_hc
+            name: Consigne de départ circuit
+          - entity: sensor.esp_ebus_wtc_heating_supply_temperature_wtc
+            name: Départ vu du régulateur
+          - type: section
+            label: Eau chaude
+          - entity: number.esp_ebus_wtc_dhw_setpoint
+            name: Consigne réglée
+          - entity: sensor.esp_ebus_wtc_dhw_setpoint_calculated
+            name: Consigne calculée
+          - type: section
+            label: Programme et saison
+          - entity: sensor.esp_ebus_wtc_heating_program_switch
+            name: Programme
+          - entity: sensor.esp_ebus_boiler_temperature_outside
+            name: Température extérieure
+          - entity: sensor.chaudiere_decalage_horloge
+          - type: section
+            label: Octets bruts (diagnostic)
+          - entity: sensor.esp_ebus_boiler_temperature_flow_setpoint
+            name: Consigne de départ
+          - entity: sensor.esp_ebus_boiler_burner_status2
+            name: Status 2
+          - entity: sensor.esp_ebus_boiler_burner_status3
+            name: Status 3
+        grid_options:
+          columns: 12
+      - type: markdown
+        title: Chauffe Programme 2
+        content: |
+          **Tous les jours**
+
+          - 🌅 **06:00 – 09:00**
+          - 🌆 **17:00 – 21:00**
+        grid_options:
+          columns: 12
+      - type: heading
+        heading: Vacances
+        heading_style: title
+        icon: mdi:beach
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: number.esp_ebus_wtc_holiday_start_day
+            name: Début – jour
+          - entity: number.esp_ebus_wtc_holiday_start_month
+            name: Début – mois
+          - entity: number.esp_ebus_wtc_holiday_end_day
+            name: Fin – jour
+          - entity: number.esp_ebus_wtc_holiday_end_month
+            name: Fin – mois
+        grid_options:
+          columns: 12
+  - type: grid
+    cards:
+      - type: heading
+        heading: Historiques
+        heading_style: title
+        icon: mdi:chart-timeline-variant
+      - type: history-graph
+        title: Températures (24 h)
+        hours_to_show: 24
+        entities:
+          - entity: sensor.esp_ebus_boiler_temperature_flow
+            name: Départ
+          - entity: sensor.esp_ebus_boiler_temperature_flow_setpoint
+            name: Consigne Départ
+          - entity: sensor.esp_ebus_boiler_temperature_dhw
+            name: Eau chaude
+          - entity: sensor.esp_ebus_wtc_dhw_setpoint_calculated
+            name: Consigne ECS
+          - entity: sensor.esp_ebus_wtc_heating_room_temperature
+            name: Ambiance
+          - entity: sensor.esp_ebus_wtc_heating_room_setpoint_active
+            name: Consigne ambiance
+          - entity: sensor.esp_ebus_boiler_temperature_outside
+            name: Extérieur
+        grid_options:
+          columns: 12
+      - type: history-graph
+        title: Brûleur et relance (24 h)
+        hours_to_show: 24
+        entities:
+          - entity: sensor.esp_ebus_wtc_heating_program_switch
+            name: Programme
+          - entity: binary_sensor.demande_chauffage_pieces
+            name: Demande pièces
+          - entity: input_boolean.chaudiere_relance
+            name: Relance
+          - entity: binary_sensor.chaudiere_pompe
+            name: Pompe
+          - entity: binary_sensor.chaudiere_circuit_ecs
+            name: Circuit ECS
+          - entity: binary_sensor.chaudiere_flamme
+            name: Flamme
+          - entity: sensor.esp_ebus_boiler_burner_load
+            name: Charge
+          - entity: sensor.esp_ebus_boiler_burner_phase
+            name: Phase
+        grid_options:
+          columns: 12
+      - type: heading
+        heading: Module eBUS
+        heading_style: subtitle
+        icon: mdi:wifi
+      - type: entities
+        show_header_toggle: false
+        entities:
+          - entity: sensor.esp_ebus_wifi_rssi
+            name: Signal Wi-Fi
+          - entity: sensor.esp_ebus_heap_total_free_bytes
+            name: Mémoire libre
+          - entity: sensor.esp_ebus_heap_minimum_free_bytes
+            name: Mémoire libre minimale
+          - entity: sensor.esp_ebus_heap_largest_free_block
+            name: Plus grand bloc libre
+          - entity: sensor.esp_ebus_uptime
+            name: Temps de fonctionnement
+          - entity: sensor.esp_ebus_ebus_error_rate
+            name: Taux d'erreurs eBUS
+          - entity: sensor.esp_ebus_reset_code
+            name: Code du dernier redémarrage
+          - entity: sensor.esp_ebus_firmware_version
+            name: Version du firmware
+          - entity: sensor.esp_ebus_boiler_bus_time_hour
+            name: Heure du bus
+          - entity: sensor.esp_ebus_boiler_bus_time_minute
+            name: Minute du bus
+          - entity: button.esp_ebus_restart
+            name: Redémarrer le module
+        grid_options:
+          columns: 12
+cards: []
