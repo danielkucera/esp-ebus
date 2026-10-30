@@ -3,6 +3,7 @@
 #include <ebus/data_types.hpp>
 #include <ebus/detail/json_reader.hpp>
 #include <ebus/detail/json_writer.hpp>
+#include <ebus/utils.hpp>
 
 #include "app/command.hpp"
 #include "app/command_manager.hpp"
@@ -39,7 +40,7 @@ TEST_CASE("Command fromTabular roundtrip preserves fields", "[Command]") {
                      R"("position":1,"ha_profile":"sensor_temperature"}])";
 
   JsonReader reader(json);
-  Command cmd = Command::fromTabular(reader);
+  Command cmd = Command::fromTabular(reader, true);
 
   REQUIRE(cmd.getKey() == "01");
   REQUIRE(cmd.getName() == "Outside_Temperature");
@@ -110,9 +111,14 @@ TEST_CASE("Command toJson serializes fields", "[Command]") {
     auto scope = writer.objectScope();
     writer.writeField("key", cmd.getKey());
     writer.writeField("name", cmd.getName());
-    writer.writeHexField("read_cmd", cmd.getReadCmd());
-    CommandManager command_manager;
-    writer.writeHexField("write_cmd", cmd.getWriteCmd(command_manager));
+    writer.writeHexField("zz", cmd.getZz());
+    writer.writeHexField("id", cmd.getId());
+    if (cmd.hasNnOverride()) {
+      writer.writeHexField("nn", cmd.getNn());
+    }
+    if (cmd.hasWriteCmd()) {
+      writer.writeHexField("wid", cmd.getWid());
+    }
     writer.writeField("interval", cmd.getInterval());
 
     {
@@ -133,6 +139,10 @@ TEST_CASE("Command toJson serializes fields", "[Command]") {
 
   REQUIRE(out.find("\"key\":\"01\"") != std::string::npos);
   REQUIRE(out.find("\"name\":\"Test\"") != std::string::npos);
+  REQUIRE(out.find("\"zz\":\"fe\"") != std::string::npos);
+  REQUIRE(out.find("\"id\":\"0700\"") != std::string::npos);
+  REQUIRE(out.find("\"nn\":\"09\"") != std::string::npos);
+  REQUIRE(out.find("\"wid\"") == std::string::npos);
   REQUIRE(out.find("\"fields\"") != std::string::npos);
   REQUIRE(out.find("\"profile\":\"data2b_celsius\"") != std::string::npos);
   REQUIRE(out.find("\"position\":1") != std::string::npos);
@@ -281,22 +291,24 @@ TEST_CASE("Command evaluate accepts raw boolean, rejects raw string",
   REQUIRE_FALSE(Command::evaluate(r2).empty());
 }
 
-TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams", "[Command]") {
+TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams",
+          "[Command]") {
   struct Example {
     const char* destination;
     const char* parameter;
     double value;
     const char* expected;
   };
-  const Example examples[] = {
-      {"70", "0500", 21, "70502309600500d2005d010000"},
-      {"70", "0800", 16, "70502309e00800a0005d010000"},
-      {"f0", "0500", 17, "f0502309d00500aa005d010000"},
-      {"f0", "0800", 13, "f050230994080082005d010000"},
-      {"17", "0500", 25, "17502309c40500fa005d010000"},
-      {"17", "0800", 19, "17502309cc0800be005d010000"}};
+  const Example examples[] = {{"70", "0500", 21, "70502309600500d2005d010000"},
+                              {"70", "0800", 16, "70502309e00800a0005d010000"},
+                              {"f0", "0500", 17, "f0502309d00500aa005d010000"},
+                              {"f0", "0800", 13, "f050230994080082005d010000"},
+                              {"17", "0500", 25, "17502309c40500fa005d010000"},
+                              {"17", "0800", 19, "17502309cc0800be005d010000"}};
   for (const auto& ex : examples) {
-    std::string json = std::string(R"({"key":"room_test","name":"Room","read_cmd":"75502203700500","write_cmd":")") +
+    std::string json =
+        std::string(
+            R"({"key":"room_test","name":"Room","read_cmd":"75502203700500","write_cmd":")") +
         ex.destination + "50230900" + ex.parameter +
         R"(","write_type":"weishaupt","interval":60,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"min":5,"max":30}]})";
     JsonReader reader(json);
@@ -316,17 +328,24 @@ TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams", "[Command]"
   }
 }
 
-TEST_CASE("Standard writes preserve bytes even for a 5023 prefix", "[Command]") {
+TEST_CASE("Standard writes preserve bytes even for a 5023 prefix",
+          "[Command]") {
   const char* prefixes[] = {"50b509040e3300", "70502309ab0500"};
   for (auto prefix : prefixes) {
-    std::string json = std::string(R"({"key":"legacy","name":"Legacy","read_cmd":"085003019e","write_cmd":")") + prefix +
-      R"(","interval":60,"master":false,"fields":[{"name":"value","profile":"uint16","position":1}]})";
+    std::string json =
+        std::string(
+            R"({"key":"legacy","name":"Legacy","read_cmd":"085003019e","write_cmd":")") +
+        prefix +
+        R"(","interval":60,"master":false,"fields":[{"name":"value","profile":"uint16","position":1}]})";
     JsonReader reader(json);
     Command cmd = Command::fromJson(reader);
     REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
     const uint8_t value[] = {0xaa, 0x00};
-    auto frame = cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2));
-    auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
+    auto frame =
+        cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2));
+    uint8_t prefix_buf[8];
+    size_t prefix_len = ebus::toBytes(prefix, prefix_buf, sizeof(prefix_buf));
+    auto expected = ebus::makeSequence(ebus::ByteView(prefix_buf, prefix_len));
     expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
     REQUIRE(frame == expected);
   }
@@ -350,28 +369,44 @@ TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
   JsonReader reader(json);
   Command cmd = Command::fromJson(reader);
   const uint8_t value[] = {0xaa, 0x00};
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)).empty());
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1)).empty());
-  const uint8_t valid_prefix[] = {0x70, 0x50, 0x23, 9, 0, 5, 0};
-  PollSequence prefix;
-  prefix.assign(ebus::ByteView(valid_prefix, 7));
-  cmd.setWriteCmd(std::move(prefix), command_manager);
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1)).empty());
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+              .empty());
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
+              .empty());
+
+  // With the correct NN prefix only the value length remains to check.
+  std::string fixed_json = json;
+  const size_t nn_pos = fixed_json.find("70502308");
+  REQUIRE(nn_pos != std::string::npos);
+  fixed_json.replace(nn_pos, 8, "70502309");
+  JsonReader fixed_reader(fixed_json);
+  Command fixed_cmd = Command::fromJson(fixed_reader);
+  REQUIRE(
+      fixed_cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+          .size() == 13);
+  REQUIRE(
+      fixed_cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
+          .empty());
 }
 
 TEST_CASE("Write types reject unknown names and non-strings", "[Command]") {
-  const char* settings[] = {R"("write_type":"other")", R"("write_type":true)",
-      R"("write_type":false)", R"("write_type":null)", R"("write_type":1)",
-      R"("write_type":"default")"};
+  const char* settings[] = {
+      R"("write_type":"other")", R"("write_type":true)",
+      R"("write_type":false)",   R"("write_type":null)",
+      R"("write_type":1)",       R"("write_type":"default")"};
   for (auto setting : settings) {
-    const std::string json = std::string(R"({"key":"type","name":"Type","read_cmd":"085003019e","write_cmd":"70502309000500",)") + setting +
+    const std::string json =
+        std::string(
+            R"({"key":"type","name":"Type","read_cmd":"085003019e","write_cmd":"70502309000500",)") +
+        setting +
         R"(,"fields":[{"name":"value","profile":"uint16","position":1}]})";
     JsonReader reader(json);
     REQUIRE_FALSE(Command::evaluate(reader).empty());
     JsonReader direct_reader(json);
     Command cmd = Command::fromJson(direct_reader);
     const uint8_t value[] = {0xd2, 0};
-    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)).empty());
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+                .empty());
   }
 }
 
@@ -396,19 +431,202 @@ TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
   Command cmd = Command::fromJson(reader);
   REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
   const uint8_t value[] = {0xaa, 0};
-  auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
+  const uint8_t prefix_bytes[] = {0x70, 0x50, 0x23, 0x09, 0xab, 0x05, 0x00};
+  auto expected =
+      ebus::makeSequence(ebus::ByteView(prefix_bytes, sizeof(prefix_bytes)));
   expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)) == expected);
+  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)) ==
+          expected);
 }
 
-TEST_CASE("Tabular write types reject boolean and unknown values", "[Command]") {
+TEST_CASE("Tabular write types reject boolean and unknown values",
+          "[Command]") {
   const char* types[] = {"true", "false", "\"other\""};
   for (auto type : types) {
-    std::string row = std::string(R"(["tab_type","Type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],)") + type + "]";
+    std::string row =
+        std::string(
+            R"(["tab_type","Type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],)") +
+        type + "]";
     JsonReader reader(row);
-    Command cmd = Command::fromTabular(reader);
+    Command cmd = Command::fromTabular(reader, true);
     REQUIRE(cmd.getWriteType() == command_types::WriteType::invalid);
     const uint8_t value[] = {0xd2, 0};
-    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)).empty());
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+                .empty());
   }
+}
+
+TEST_CASE("Command compact schema derives read NN", "[Command]") {
+  std::string json = R"({"key":"01","name":"T","zz":"fe","id":"b51601",)"
+                     R"("interval":0,"master":true,)"
+                     R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+                     R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasNnOverride() == false);
+  REQUIRE(cmd.hasWriteCmd() == false);
+
+  uint8_t buf[10];
+  size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 5);
+  REQUIRE(buf[0] == 0xfe);
+  REQUIRE(buf[1] == 0xb5);
+  REQUIRE(buf[2] == 0x16);
+  REQUIRE(buf[3] == 0x01);  // derived NN = len(id)-2
+  REQUIRE(buf[4] == 0x01);
+}
+
+TEST_CASE("Command explicit nn overrides derived NN", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"T","zz":"fe","id":"b51601","nn":"03",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasNnOverride() == true);
+  REQUIRE(cmd.getNn().size() == 1);
+  REQUIRE(cmd.getNn()[0] == 0x03);
+
+  uint8_t buf[10];
+  size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 5);
+  REQUIRE(buf[3] == 0x03);
+  REQUIRE(buf[4] == 0x01);
+}
+
+TEST_CASE("Command buildWriteCmd derives NN from value", "[Command]") {
+  std::string json =
+      R"({"key":"32","name":"W","zz":"50","wid":"b5090e3300",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"v","profile":"data1c_celsius","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasWriteCmd() == true);
+
+  uint8_t vb[] = {0xaa};
+  ebus::Sequence seq = cmd.buildWriteCmd(ebus::ByteView(vb, 1));
+  REQUIRE(seq.size() == 8);
+  const uint8_t expect[] = {0x50, 0xb5, 0x09, 0x04, 0x0e, 0x33, 0x00, 0xaa};
+  for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(seq[i] == expect[i]);
+}
+
+TEST_CASE("Command buildWriteCmd is empty for read-only command", "[Command]") {
+  std::string json = R"({"key":"01","name":"T","zz":"fe","id":"0700",)"
+                     R"("interval":0,"master":true,)"
+                     R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+                     R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasWriteCmd() == false);
+  uint8_t vb[] = {0xaa};
+  REQUIRE(cmd.buildWriteCmd(ebus::ByteView(vb, 1)).empty());
+}
+
+TEST_CASE("Command legacy read_cmd round-trips byte-exact", "[Command]") {
+  SECTION("Derivable NN matches stored NN") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"50b504020d00",)"
+        R"("interval":0,"master":false,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    REQUIRE(cmd.hasNnOverride() == false);
+    uint8_t buf[10];
+    size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+    REQUIRE(len == 6);
+    const uint8_t expect[] = {0x50, 0xb5, 0x04, 0x02, 0x0d, 0x00};
+    for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(buf[i] == expect[i]);
+  }
+
+  SECTION("Divergent NN becomes explicit override") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"feb5160301",)"
+        R"("interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    REQUIRE(cmd.hasNnOverride() == true);
+    uint8_t buf[10];
+    size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+    REQUIRE(len == 5);
+    const uint8_t expect[] = {0xfe, 0xb5, 0x16, 0x03, 0x01};
+    for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(buf[i] == expect[i]);
+  }
+
+  SECTION("No-tail read keeps original NN") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"fe070009",)"
+        R"("interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"data2b_celsius","position":1,)"
+        R"("ha_profile":"sensor_temperature"}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    REQUIRE(cmd.getId().size() == 2);
+    REQUIRE(cmd.hasNnOverride() == true);
+    uint8_t buf[10];
+    size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+    REQUIRE(len == 4);
+    const uint8_t expect[] = {0xfe, 0x07, 0x00, 0x09};
+    for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(buf[i] == expect[i]);
+  }
+}
+
+TEST_CASE("Command matches requires id and exact bytes", "[Command]") {
+  SECTION("Idless command never matches") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    uint8_t bytes[] = {0x10, 0xfe, 0x07, 0x00, 0x09};
+    REQUIRE(cmd.matches(ebus::ByteView(bytes, sizeof(bytes))) == false);
+  }
+
+  SECTION("Exact match including NN byte") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"feb5160301",)"
+        R"("interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    uint8_t hit[] = {0x00, 0xfe, 0xb5, 0x16, 0x03, 0x01};
+    REQUIRE(cmd.matches(ebus::ByteView(hit, sizeof(hit))) == true);
+
+    uint8_t miss[] = {0x00, 0xfe, 0xb5, 0x16, 0x04, 0x01};
+    REQUIRE(cmd.matches(ebus::ByteView(miss, sizeof(miss))) == false);
+  }
+}
+
+TEST_CASE("Command evaluate accepts compact schema", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"T","zz":"fe","id":"0700","wid":"07000e",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"data2b_celsius","position":1,)"
+      R"("ha_profile":"sensor_temperature"}]})";
+  JsonReader reader(json);
+  REQUIRE(Command::evaluate(reader).empty());
+
+  std::string no_zz =
+      R"({"key":"01","name":"T","id":"0700","interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader r2(no_zz);
+  std::string_view error = Command::evaluate(r2);
+  REQUIRE_FALSE(error.empty());
+  REQUIRE(error.find("zz") != std::string_view::npos);
 }
