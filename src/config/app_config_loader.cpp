@@ -68,8 +68,6 @@ bool AppConfigLoader::load(AppConfig& config) {
                               config_manager_.readString("ebusAddress"));
   assignIntIfNonZero(config.bus.window_us,
                      config_manager_.readInt("busWindow"));
-  assignIntIfNonZero(config.bus.offset_us,
-                     config_manager_.readInt("busOffset"));
 
   config.bus.system_inquiry = config_manager_.readBool("systemInquiry");
   config.bus.system_response = config_manager_.readBool("systemResponse");
@@ -135,8 +133,6 @@ bool AppConfigLoader::save(const AppConfig& config) {
   ok &= config_manager_.writeString("ebusAddress", config.bus.address.c_str());
   ok &= config_manager_.writeString("busWindow",
                                     std::to_string(config.bus.window_us));
-  ok &= config_manager_.writeString("busOffset",
-                                    std::to_string(config.bus.offset_us));
   ok &= config_manager_.writeString(
       "systemInquiry", config.bus.system_inquiry ? "true" : "false");
   ok &= config_manager_.writeString(

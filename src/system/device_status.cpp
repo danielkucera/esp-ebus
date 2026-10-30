@@ -126,7 +126,6 @@ struct EbusStatus {
     w.writeField("pwm", statusConfig().pwm.value);
     w.writeField("ebus_address", statusConfig().bus.address.c_str());
     w.writeField("bus_window", statusConfig().bus.window_us);
-    w.writeField("bus_offset", statusConfig().bus.offset_us);
   }
 };
 
