@@ -8,6 +8,9 @@ managed_components
 build/
 AGENTS.md
 
+# Local ebus-library
+lib/ebus
+
 # Generated headers (build-time generation via scripts/generate_*.py)
 include/app/data_profile_gen.hpp
 include/app/ha_profile_gen.hpp
@@ -16,3 +19,9 @@ include/app/build_info_gen.hpp
 # User profiles
 profiles/data_profiles_user.json
 profiles/ha_profiles_user.json
+
+# ebus-profile-gen
+__pycache__
+tools/ebus-profile-gen/ebusd-configuration
+tools/ebus-profile-gen/ebus-typespec
+tools/ebus-profile-gen/generated/
