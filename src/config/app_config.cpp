@@ -18,8 +18,7 @@ void AppConfig::reset() {
   bus.address = "ff";
   mqtt_ha.thing_name = "esp-eBus";
   pwm.value = 130;
-  bus.window_us = 4400;
-  bus.offset_us = 50;
+  bus.window_us = 4350;
   bus.system_inquiry = false;
   bus.system_response = true;
   bus.scan_on_startup = false;
@@ -40,9 +39,6 @@ bool AppConfig::isValid() const {
   if (bus.window_us < app::limits::Bus::window_min_us ||
       bus.window_us > app::limits::Bus::window_max_us)
     return false;
-  // Note: offset_min_us is 0 and offset_us unsigned, so only the upper
-  // bound is checked (a `< min` comparison would be dead code).
-  if (bus.offset_us > app::limits::Bus::offset_max_us) return false;
 
   return true;
 }
@@ -90,12 +86,11 @@ bool AppConfig::isKnownFlatKey(std::string_view key) {
          key == "ipAddress" || key == "gateway" || key == "netmask" ||
          key == "dns1" || key == "dns2" || key == "sntpEnabled" ||
          key == "sntpServer" || key == "sntpTimezone" || key == "pwmValue" ||
-         key == "ebusAddress" || key == "busWindow" || key == "busOffset" ||
-         key == "systemInquiry" || key == "systemResponse" ||
-         key == "scanOnStartup" || key == "mqttEnabled" ||
-         key == "mqttServer" || key == "mqttUser" || key == "mqttPass" ||
-         key == "rootTopic" || key == "haEnabled" || key == "thingName" ||
-         key == "httpHeaders";
+         key == "ebusAddress" || key == "busWindow" || key == "systemInquiry" ||
+         key == "systemResponse" || key == "scanOnStartup" ||
+         key == "mqttEnabled" || key == "mqttServer" || key == "mqttUser" ||
+         key == "mqttPass" || key == "rootTopic" || key == "haEnabled" ||
+         key == "thingName" || key == "httpHeaders";
 }
 
 bool AppConfig::mergeFlatJson(
@@ -156,8 +151,6 @@ bool AppConfig::mergeFlatJson(
         bus.address.assign(value);
       } else if (key == "busWindow") {
         assignFlatU16(bus.window_us, value);
-      } else if (key == "busOffset") {
-        assignFlatU16(bus.offset_us, value);
       } else if (key == "systemInquiry") {
         bus.system_inquiry = parseFlatBool(value);
       } else if (key == "systemResponse") {
@@ -231,8 +224,6 @@ void AppConfig::collectDrift(const AppConfig& live, const AppConfig& requested,
     keys.emplace_back("ebusAddress");
   if (live.bus.window_us != requested.bus.window_us)
     keys.emplace_back("busWindow");
-  if (live.bus.offset_us != requested.bus.offset_us)
-    keys.emplace_back("busOffset");
   if (live.bus.system_inquiry != requested.bus.system_inquiry)
     keys.emplace_back("systemInquiry");
   if (live.bus.system_response != requested.bus.system_response)

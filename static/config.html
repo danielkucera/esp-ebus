@@ -27,7 +27,8 @@
         <div><label for="wifiSsid">WiFi SSID</label></div>
         <div><input id="wifiSsid" type="text" class="config"></div>
         <div><label for="wifiPassword">WiFi Password</label></div>
-        <div><input id="wifiPassword" type="password" class="config" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');"></div>
+        <div><input id="wifiPassword" type="password" class="config" autocomplete="new-password" readonly
+                onfocus="this.removeAttribute('readonly');"></div>
         <div><label for="wifiBssid">WiFi BSSID (MAC address)</label></div>
         <div><input id="wifiBssid" type="text" class="config" placeholder="leave empty for dynamic selection"
                 spellcheck="false"></div>
@@ -59,7 +60,8 @@
         <div><label for="thingName">Thing Name</label></div>
         <div><input id="thingName" type="text" class="config"></div>
         <div><label for="apModePassword">AP Mode Password</label></div>
-        <div><input id="apModePassword" type="password" class="config" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');"></div>
+        <div><input id="apModePassword" type="password" class="config" autocomplete="new-password" readonly
+                onfocus="this.removeAttribute('readonly');"></div>
     </fieldset>
 
     <fieldset>
@@ -117,11 +119,9 @@
                 <option value="f3">F3</option>
                 <option value="f7">F7</option>
                 <option value="ff">FF</option>
-        </select></div>
+            </select></div>
         <div><label for="busWindow">Bus Window (us)</label></div>
         <div><input id="busWindow" type="number" step="1" class="config"></div>
-        <div><label for="busOffset">Bus Offset (us)</label></div>
-        <div><input id="busOffset" type="number" step="1" class="config"></div>
         <div><label><input id="systemInquiry" type="checkbox" class="config">Inquiry Of Existence</label></div>
         <div><label><input id="systemResponse" type="checkbox" class="config">Send Response</label></div>
         <div><label><input id="scanOnStartup" type="checkbox" class="config">Scan On Startup</label></div>
@@ -135,7 +135,8 @@
         <div><label for="mqttUser">MQTT User</label></div>
         <div><input id="mqttUser" type="text" class="config"></div>
         <div><label for="mqttPass">MQTT Password</label></div>
-        <div><input id="mqttPass" type="password" class="config" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly');"></div>
+        <div><input id="mqttPass" type="password" class="config" autocomplete="new-password" readonly
+                onfocus="this.removeAttribute('readonly');"></div>
         <div><label for="rootTopic">Root Topic</label></div>
         <div><input id="rootTopic" type="text" class="config" placeholder="leave empty for ebus/&lt;<LOW_MAC>&gt;/"
                 spellcheck="false"></div>
@@ -216,7 +217,7 @@
                 const res = await fetch('/api/v1/app/config');
                 if (!res.ok) throw new Error('Load failed');
                 const cfg_obj = await res.json();
-                const required = ['pwmValue', 'busWindow', 'busOffset', 'ebusAddress'];
+                const required = ['pwmValue', 'busWindow', 'ebusAddress'];
                 if (!required.every(id => cfg_obj.fields?.[id]?.default !== undefined)) {
                     throw new Error('Configuration defaults unavailable');
                 }

@@ -34,7 +34,6 @@ struct AppConfig {
 
   struct Bus {
     uint16_t window_us;
-    uint16_t offset_us;
     ebus::FixedString<8> address;
     bool system_inquiry = false;
     bool system_response = true;
