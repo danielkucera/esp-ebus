@@ -189,7 +189,6 @@ bool App::initServices() {
 
   // Bus
   runtime_config.bus.window_us = config_.bus.window_us;
-  runtime_config.bus.offset_us = config_.bus.offset_us;
   runtime_config.bus.watchdog_timeout_ms = 250;
   runtime_config.bus.syn_gen = true;
 
@@ -229,7 +228,6 @@ bool App::initServices() {
 
   // Bus
   runtime_config.bus.window_us = config_.bus.window_us;
-  runtime_config.bus.offset_us = config_.bus.offset_us;
   runtime_config.bus.watchdog_timeout_ms = 250;
   runtime_config.bus.syn_gen = false;
 

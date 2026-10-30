@@ -14,7 +14,7 @@ for (const match of html.matchAll(/<(input|select|textarea)\b([^>]*)>/g)) {
         id: attrs.id, tagName: match[1].toUpperCase(), type: attrs.type || 'text',
         value: attrs.value || '', defaultValue: attrs.value || '',
         checked: false, defaultChecked: false,
-        setAttribute() {}, addEventListener() {},
+        setAttribute() { }, addEventListener() { },
     };
     if (match[1] !== 'select') {
         let value = field.value;
@@ -43,8 +43,7 @@ for (const match of html.matchAll(/<(input|select|textarea)\b([^>]*)>/g)) {
 const placeholders = new Map();
 const metadata = {
     pwmValue: { default: 130, min: 1, max: 255 },
-    busWindow: { default: 4400, min: 4250, max: 4500 },
-    busOffset: { default: 50, min: 0, max: 200 },
+    busWindow: { default: 4350, min: 4332, max: 4424 },
     ebusAddress: { default: 'ff' },
     systemResponse: { default: true },
 };
@@ -53,16 +52,16 @@ let saved;
 let posts = 0;
 let responseOk = true;
 const context = vm.createContext({
-    console: { log: console.log, error() {} },
+    console: { log: console.log, error() { } },
     document: {
         getElementsByClassName() { return [...fields.values()]; },
         getElementById(id) {
             if (fields.has(id)) return fields.get(id);
-            if (!placeholders.has(id)) placeholders.set(id, { addEventListener() {} });
+            if (!placeholders.has(id)) placeholders.set(id, { addEventListener() { } });
             return placeholders.get(id);
         },
     },
-    handleHome() {}, setStatus() {},
+    handleHome() { }, setStatus() { },
     async fetch(url, options) {
         if (options?.method === 'POST') {
             posts++;
@@ -89,33 +88,31 @@ vm.runInContext(script, context);
     await context.saveConfig();
     assert.equal(saved.ebusAddress, 'ff', 'fresh reset must retain the default eBUS address');
     assert.equal(saved.pwmValue, '130');
-    assert.equal(saved.busWindow, '4400');
-    assert.equal(saved.busOffset, '50');
+    assert.equal(saved.busWindow, '4350');
     assert.equal(saved.wifiSsid, 'home-network');
     assert.equal(saved.wifiPassword, 'home-password');
 
-    stored = { config: { ebusAddress: '31', busWindow: '4400', busOffset: '0', systemResponse: 'false' }, fields: metadata };
+    stored = { config: { ebusAddress: '31', busWindow: '4350', systemResponse: 'false' }, fields: metadata };
     await context.loadConfig();
     await context.saveConfig();
     assert.equal(saved.ebusAddress, '31', 'stored selection must override the default');
-    assert.equal(saved.busOffset, '0');
     assert.equal(saved.systemResponse, 'false');
 
     stored = { config: {}, fields: metadata };
     await context.loadConfig();
     await context.saveConfig();
     assert.equal(saved.ebusAddress, 'ff', 'loading defaults again must restore the selected option');
-    assert.equal(saved.busOffset, '50');
     // Changing backend metadata must change UI defaults and limits without HTML edits.
-    stored = { config: {}, fields: { ...metadata,
-        busWindow: { default: 4321, min: 4200, max: 4600 },
-        busOffset: { default: 75, min: 0, max: 150 },
-        ebusAddress: { default: '31' },
-    } };
+    stored = {
+        config: {}, fields: {
+            ...metadata,
+            busWindow: { default: 4321, min: 4200, max: 4600 },
+            ebusAddress: { default: '31' },
+        }
+    };
     await context.loadConfig();
     await context.saveConfig();
     assert.equal(saved.busWindow, '4321');
-    assert.equal(saved.busOffset, '75');
     assert.equal(saved.ebusAddress, '31');
     assert.equal(fields.get('busWindow').min, 4200);
     assert.equal(fields.get('busWindow').max, 4600);

@@ -38,10 +38,8 @@ inline constexpr uint8_t max = 255;
 
 // --- Bus / eBUS Protocol ---
 namespace Bus {
-inline constexpr uint16_t window_min_us = 4250;
-inline constexpr uint16_t window_max_us = 4500;
-inline constexpr uint16_t offset_min_us = 0;
-inline constexpr uint16_t offset_max_us = 200;
+inline constexpr uint16_t window_min_us = 4332;
+inline constexpr uint16_t window_max_us = 4424;
 }  // namespace Bus
 
 }  // namespace app::limits

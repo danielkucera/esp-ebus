@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
+#include <ebus/detail/json_reader.hpp>
 #include <string>
 
-#include "config/app_config_loader.hpp"
 #include "app/app_limits.hpp"
-#include <ebus/detail/json_reader.hpp>
+#include "config/app_config_loader.hpp"
 #include "config/config_manager.hpp"
 
 // The ConfigManager instance backing these tests. NVS itself is the
@@ -83,7 +83,7 @@ TEST_CASE("AppConfigLoader save/load roundtrip", "[config_nvs]") {
   written.reset();
   written.network.wifi_ssid.assign("my-ssid");
   written.pwm.value = 200;
-  written.bus.window_us = 4300;
+  written.bus.window_us = 4350;
   written.bus.address.assign("01");
   written.sntp.enabled = true;
   written.mqtt.server.assign("mqtt.local");
@@ -95,12 +95,10 @@ TEST_CASE("AppConfigLoader save/load roundtrip", "[config_nvs]") {
   REQUIRE(loader.load(loaded) == true);
   REQUIRE(std::string(loaded.network.wifi_ssid.c_str()) == "my-ssid");
   REQUIRE(loaded.pwm.value == 200);
-  REQUIRE(loaded.bus.window_us == 4300);
+  REQUIRE(loaded.bus.window_us == 4350);
   REQUIRE(std::string(loaded.bus.address.c_str()) == "01");
   REQUIRE(loaded.sntp.enabled == true);
   REQUIRE(std::string(loaded.mqtt.server.c_str()) == "mqtt.local");
-  // Untouched keys carry reset defaults.
-  REQUIRE(loaded.bus.offset_us == 50);
 }
 
 TEST_CASE("AppConfigLoader load overlays stored keys on defaults",
@@ -112,15 +110,16 @@ TEST_CASE("AppConfigLoader load overlays stored keys on defaults",
   AppConfigLoader loader(config_manager);
   REQUIRE(loader.load(loaded) == true);
   REQUIRE(loaded.pwm.value == 210);
-  REQUIRE(loaded.bus.window_us == 4400);
+  REQUIRE(loaded.bus.window_us == 4350);
 }
 
-TEST_CASE("Config API supplies firmware defaults and limits without secrets", "[config_nvs]") {
+TEST_CASE("Config API supplies firmware defaults and limits without secrets",
+          "[config_nvs]") {
   config_manager.resetConfig();
   REQUIRE(ConfigManager::writeString("wifiPassword", "stored-wifi-secret"));
   REQUIRE(ConfigManager::writeString("apModePassword", "stored-ap-secret"));
   REQUIRE(ConfigManager::writeString("mqttPass", "stored-mqtt-secret"));
-  REQUIRE(ConfigManager::writeString("busWindow", "4300"));
+  REQUIRE(ConfigManager::writeString("busWindow", "4350"));
   std::string out;
   ConfigManager::fetchConfig([&](std::string_view chunk) { out += chunk; });
   AppConfig defaults;
@@ -142,23 +141,23 @@ TEST_CASE("Config API supplies firmware defaults and limits without secrets", "[
   REQUIRE(number("busWindow", "default") == defaults.bus.window_us);
   REQUIRE(number("busWindow", "min") == app::limits::Bus::window_min_us);
   REQUIRE(number("busWindow", "max") == app::limits::Bus::window_max_us);
-  REQUIRE(number("busOffset", "default") == defaults.bus.offset_us);
-  REQUIRE(number("busOffset", "min") == app::limits::Bus::offset_min_us);
-  REQUIRE(number("busOffset", "max") == app::limits::Bus::offset_max_us);
-  REQUIRE(out.find("4300") != std::string::npos);
-  for (auto secret : {"wifiPassword", "apModePassword", "mqttPass",
-                      "stored-wifi-secret", "stored-ap-secret", "stored-mqtt-secret",
-                      defaults.network.wifi_password.c_str(),
-                      defaults.network.ap_password.c_str()}) {
+  REQUIRE(out.find("4350") != std::string::npos);
+  for (auto secret :
+       {"wifiPassword", "apModePassword", "mqttPass", "stored-wifi-secret",
+        "stored-ap-secret", "stored-mqtt-secret",
+        defaults.network.wifi_password.c_str(),
+        defaults.network.ap_password.c_str()}) {
     REQUIRE(out.find(secret) == std::string::npos);
   }
 }
 
-TEST_CASE("Empty stored configuration still supplies page defaults", "[config_nvs]") {
+TEST_CASE("Empty stored configuration still supplies page defaults",
+          "[config_nvs]") {
   config_manager.resetConfig();
   std::string out;
   ConfigManager::fetchConfig([&](std::string_view chunk) { out += chunk; });
   REQUIRE(out.find("\"config\":{}") != std::string::npos);
   REQUIRE(out.find("\"fields\":{") != std::string::npos);
-  REQUIRE(out.find("\"ebusAddress\":{\"default\":\"ff\"}") != std::string::npos);
+  REQUIRE(out.find("\"ebusAddress\":{\"default\":\"ff\"}") !=
+          std::string::npos);
 }

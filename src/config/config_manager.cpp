@@ -362,10 +362,8 @@ void ConfigManager::fetchConfig(const ebus::JsonChunkVisitor& visitor) {
       numeric("pwmValue", defaults.pwm.value, app::limits::Pwm::min,
               app::limits::Pwm::max);
       field("ebusAddress", defaults.bus.address.c_str());
-      numeric("busWindow", defaults.bus.window_us, app::limits::Bus::window_min_us,
-              app::limits::Bus::window_max_us);
-      numeric("busOffset", defaults.bus.offset_us, app::limits::Bus::offset_min_us,
-              app::limits::Bus::offset_max_us);
+      numeric("busWindow", defaults.bus.window_us,
+              app::limits::Bus::window_min_us, app::limits::Bus::window_max_us);
       field("systemInquiry", defaults.bus.system_inquiry);
       field("systemResponse", defaults.bus.system_response);
       field("scanOnStartup", defaults.bus.scan_on_startup);

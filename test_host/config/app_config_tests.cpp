@@ -9,8 +9,7 @@ TEST_CASE("AppConfig reset provides migration-safe defaults", "[app_config]") {
 
   // Values relied upon by the main.cpp migration (must match old fallbacks)
   REQUIRE(cfg.pwm.value == 130);
-  REQUIRE(cfg.bus.window_us == 4400);
-  REQUIRE(cfg.bus.offset_us == 50);
+  REQUIRE(cfg.bus.window_us == 4350);
   REQUIRE(std::string(cfg.bus.address.c_str()) == "ff");
   REQUIRE(cfg.bus.system_inquiry == false);
   REQUIRE(cfg.bus.system_response == true);
@@ -42,11 +41,11 @@ TEST_CASE("AppConfig isValid rejects out-of-range values", "[app_config]") {
   REQUIRE(bad.isValid() == false);
 
   bad = cfg;
-  bad.bus.window_us = 4000;
+  bad.bus.window_us = 4300;  // Below tZmin + guard
   REQUIRE(bad.isValid() == false);
 
   bad = cfg;
-  bad.bus.offset_us = 500;
+  bad.bus.window_us = 4425;  // Above tZmax - guard
   REQUIRE(bad.isValid() == false);
 
   bad = cfg;
@@ -65,17 +64,16 @@ TEST_CASE("AppConfig mergeFlatJson applies NVS-keyed string values",
 
   REQUIRE(
       cfg.mergeFlatJson(
-          R"({"wifiSsid":"my-ssid","pwmValue":"200","busWindow":"4300",)"
+          R"({"wifiSsid":"my-ssid","pwmValue":"200","busWindow":"4350",)"
           R"("sntpEnabled":"true","mqttEnabled":"1","scanOnStartup":"on"})") ==
       true);
   REQUIRE(std::string(cfg.network.wifi_ssid.c_str()) == "my-ssid");
   REQUIRE(cfg.pwm.value == 200);
-  REQUIRE(cfg.bus.window_us == 4300);
+  REQUIRE(cfg.bus.window_us == 4350);
   REQUIRE(cfg.sntp.enabled == true);
   REQUIRE(cfg.mqtt.enabled == true);
   REQUIRE(cfg.bus.scan_on_startup == true);
   // Untouched keys keep their values
-  REQUIRE(cfg.bus.offset_us == 50);
   REQUIRE(std::string(cfg.bus.address.c_str()) == "ff");
 
   // Boolean false spellings
@@ -96,7 +94,7 @@ TEST_CASE("AppConfig mergeFlatJson ignores unparseable ints", "[app_config]") {
   REQUIRE(cfg.mergeFlatJson(R"({"pwmValue":"abc","busWindow":"999999"})") ==
           true);
   REQUIRE(cfg.pwm.value == 130);
-  REQUIRE(cfg.bus.window_us == 4400);
+  REQUIRE(cfg.bus.window_us == 4350);
 }
 
 TEST_CASE("AppConfig mergeFlatJson collects unknown keys", "[app_config]") {
