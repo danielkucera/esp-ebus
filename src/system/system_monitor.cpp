@@ -348,6 +348,7 @@ void SystemMonitor::processProtocolInfo() {
       item.info.slave_view = ebus::ByteView(nullptr, 0);
     }
 
+    command_manager.handleWriteResult(item.info);
     if (item.info.is_error) {
       Mqtt::publishError(item.info);
     } else {
