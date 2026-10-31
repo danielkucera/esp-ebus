@@ -183,6 +183,7 @@ target_link_libraries(network_tests PRIVATE
 
 add_executable(system_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/system/string_pool_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/system/monitor_schedule_tests.cpp
 )
 target_link_libraries(system_tests PRIVATE
     system_test_support
