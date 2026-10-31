@@ -835,18 +835,43 @@ void Mqtt::handleValueUpdate(std::string_view key) {
   }
 
   if (connected_) {
-    char topic_buf[128];
-    int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s",
-                     (int)cmd->getName().size(), cmd->getName().data());
-    if (n > 0 && (size_t)n < sizeof(topic_buf)) {
-      for (int i = 7; i < n; ++i)
-        topic_buf[i] = (char)tolower((unsigned char)topic_buf[i]);
+    const size_t field_count = cmd->getFieldCount();
+    if (field_count <= 1) {
+      char topic_buf[128];
+      int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s",
+                       (int)cmd->getName().size(), cmd->getName().data());
+      if (n > 0 && (size_t)n < sizeof(topic_buf)) {
+        for (int i = 7; i < n; ++i)
+          topic_buf[i] = (char)tolower((unsigned char)topic_buf[i]);
 
-      publishStream(topic_buf, 0, false, [&](const ebus::JsonChunkVisitor& v) {
-        ebus::detail::JsonWriter writer(v);
-        auto scope = writer.objectScope();
-        cmd->writeValuePayload(writer);
-      });
+        publishStream(topic_buf, 0, false,
+                      [&](const ebus::JsonChunkVisitor& v) {
+                        ebus::detail::JsonWriter writer(v);
+                        auto scope = writer.objectScope();
+                        cmd->writeValuePayload(writer);
+                      });
+      }
+    } else {
+      for (size_t i = 0; i < field_count; ++i) {
+        const char* field_name = cmd->getFieldName(i);
+        if (!field_name || !field_name[0]) field_name = "value";
+
+        char topic_buf[128];
+        int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s_%s",
+                         (int)cmd->getName().size(), cmd->getName().data(),
+                         field_name);
+        if (n <= 0 || (size_t)n >= sizeof(topic_buf)) continue;
+        for (int j = 7; j < n; ++j)
+          topic_buf[j] = (char)tolower((unsigned char)topic_buf[j]);
+
+        publishStream(topic_buf, 0, false,
+                      [cmd, i](const ebus::JsonChunkVisitor& v) {
+                        ebus::detail::JsonWriter writer(v);
+                        auto scope = writer.objectScope();
+                        writer.appendKey("value");
+                        cmd->writeFieldValue(writer, i);
+                      });
+      }
     }
   }
 }
