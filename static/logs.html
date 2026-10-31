@@ -221,12 +221,12 @@
                 : '<tr><td colspan="3">No logs available.</td></tr>';
         }
 
-        function prependRenderedEntries(newEntries) {
-            if (newEntries.length === 0) return;
+        function prependRenderedEntries(newEntries, removedEntries = []) {
+            if (newEntries.length === 0 && removedEntries.length === 0) return;
 
             const checkedLevels = getCheckedLevels();
             const logsBody = document.getElementById('logsBody');
-            const isPlaceholderVisible = logsBody.children.length === 1 && logsBody.textContent.includes('No logs available.');
+            const isPlaceholderVisible = renderedLines.length === 0;
             if (isPlaceholderVisible) {
                 logsBody.innerHTML = '';
             }
@@ -236,14 +236,23 @@
                 renderedLines.unshift(buildRenderedLine(logEntry));
                 logsBody.insertAdjacentHTML('afterbegin', buildRenderedRow(logEntry));
             }
+
+            // Remove only evicted visible rows, keeping the rest of the DOM intact.
+            for (const entry of removedEntries) {
+                if (!entry.logRestart && !checkedLevels.includes(entry.level)) continue;
+                renderedLines.pop();
+                logsBody.lastElementChild?.remove();
+            }
+        }
+
+        function logEntryKey(entry) {
+            return `${entry.millis}|${entry.level}|${entry.sid}|${entry.pid}|${JSON.stringify(entry.message)}`;
         }
 
         function addFetchedEntries(logItems) {
             const newEntries = [];
-            let droppedAny = false;
             for (const logEntry of logItems) {
-                // const entryKey = `${logEntry.millis}|${logEntry.level}|${logEntry.message}`;
-                const entryKey = `${logEntry.millis}|${logEntry.level}|${logEntry.sid}|${logEntry.pid}|${JSON.stringify(logEntry.message)}`;
+                const entryKey = logEntryKey(logEntry);
                 if (seenEntries.has(entryKey)) continue;
 
                 seenEntries.add(entryKey);
@@ -251,16 +260,9 @@
                 newEntries.push(logEntry);
             }
 
-            if (storedEntries.length > maxLines) {
-                const removedEntries = storedEntries.splice(maxLines);
-                droppedAny = removedEntries.length > 0;
-                for (const entry of removedEntries) {
-                    const entryKey = `${entry.millis}|${entry.level}|${entry.message}`;
-                    seenEntries.delete(entryKey);
-                }
-            }
-
-            return { newEntries, droppedAny };
+            const removedEntries = storedEntries.splice(maxLines);
+            for (const entry of removedEntries) seenEntries.delete(logEntryKey(entry));
+            return { newEntries, removedEntries };
         }
 
         async function loadTimeRelationOnce() {
@@ -325,12 +327,8 @@
                         logRestart: true
                     }, ...logItems]
                     : logItems;
-                const { newEntries, droppedAny } = addFetchedEntries(itemsToAdd);
-                if (droppedAny) {
-                    renderFromStoredData();
-                } else {
-                    prependRenderedEntries(newEntries);
-                }
+                const { newEntries, removedEntries } = addFetchedEntries(itemsToAdd);
+                prependRenderedEntries(newEntries, removedEntries);
                 if (Number.isFinite(maxMillis)) {
                     lastSeenMillis = maxMillis;
                 }
