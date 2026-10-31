@@ -1,0 +1,11 @@
+[
+{"key":"hc3_flow","name":"Weishaupt/Circuit_3_Upstairs/Flow_temperature","read_cmd":"52501407","write_cmd":"","interval":0,"master":false,"fields":[{"name":"value","profile":"data2b_celsius","position":3,"ha_profile":"sensor_temperature"}]},
+{"key":"hc3_flow_set","name":"Weishaupt/Circuit_3_Upstairs/Target_flow_temperature","read_cmd":"52501407","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"data2b_celsius","position":2,"ha_profile":"sensor_temperature"}]},
+{"key":"hc3_normal","name":"Weishaupt/Circuit_3_Upstairs/Normal_room_setpoint","read_cmd":"f5502203700500","write_cmd":"f0502309000500","interval":60,"master":false,"write_type":"weishaupt","fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"number_temperature","min":5,"max":30}]},
+{"key":"hc3_operating_level","name":"Weishaupt/Circuit_3_Upstairs/Operating_level","read_cmd":"52501407","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"uint8","position":1}]},
+{"key":"hc3_operating_mode","name":"Weishaupt/Circuit_3_Upstairs/Operating_mode","read_cmd":"f5502203091201","write_cmd":"f0502309001201","interval":30,"master":false,"write_type":"weishaupt","fields":[{"name":"value","profile":"uint16","position":1}]},
+{"key":"hc3_presence_override","name":"Weishaupt/Circuit_3_Upstairs/Presence_override","read_cmd":"f55022036c6d00","write_cmd":"f0502309006d00","interval":30,"master":false,"write_type":"weishaupt","fields":[{"name":"value","profile":"uint16","position":1,"min":0,"max":1}]},
+{"key":"hc3_reduced","name":"Weishaupt/Circuit_3_Upstairs/Reduced_room_setpoint","read_cmd":"f5502203580800","write_cmd":"f0502309000800","interval":60,"master":false,"write_type":"weishaupt","fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"number_temperature","min":5,"max":30}]},
+{"key":"hc3_room","name":"Weishaupt/Circuit_3_Upstairs/Room_temperature","read_cmd":"52501407","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"data2b_celsius","position":4,"ha_profile":"sensor_temperature"}]},
+{"key":"hc3_room_set","name":"Weishaupt/Circuit_3_Upstairs/Active_room_setpoint","read_cmd":"f5502203081200","write_cmd":"","interval":60,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"sensor_temperature"}]}
+]
