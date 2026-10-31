@@ -1,0 +1,15 @@
+[
+{"key":"01","name":"WTC/Installer/Adaption","read_cmd":"35090203150102","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16","position":1,"ha_profile":"sensor_diagnostic"}]},
+{"key":"07","name":"WTC/Installer/Type_of_construction","read_cmd":"35090203280102","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16","position":1,"ha_profile":"sensor_diagnostic"}]},
+{"key":"09","name":"WTC/Installer/DHW_max_temperature","read_cmd":"35090203340102","write_cmd":"350903043401","interval":3600,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"number_temperature","min":40,"max":70}]},
+{"key":"11","name":"WTC/Installer/DHW_mode","read_cmd":"35090203350102","write_cmd":"350903043501","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16","position":1,"ha_profile":"number_generic","min":0,"max":2}]},
+{"key":"32","name":"WTC/Installer/Legionella_function","read_cmd":"35090203010102","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16","position":1,"ha_profile":"sensor_diagnostic"}]},
+{"key":"33","name":"WTC/Installer/Max_supply_temperature","read_cmd":"35090203280002","write_cmd":"350903042800","interval":3600,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"number_temperature","min":30,"max":80}]},
+{"key":"34","name":"WTC/Installer/Min_supply_temperature","read_cmd":"350902032B0102","write_cmd":"350903042B01","interval":3600,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"number_temperature","min":10,"max":50}]},
+{"key":"42","name":"WTC/Installer/Reduced_mode","read_cmd":"35090203320102","write_cmd":"350903043201","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16","position":1,"ha_profile":"number_generic","min":0,"max":1}]},
+{"key":"43","name":"WTC/Installer/Room_influence","read_cmd":"350902030F0102","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16","position":1,"ha_profile":"sensor_diagnostic"}]},
+{"key":"44","name":"WTC/Installer/Room_sensor_correction","read_cmd":"35090203090102","write_cmd":"350903040901","interval":3600,"master":false,"fields":[{"name":"value","profile":"int16_celsius_div10","position":1,"ha_profile":"number_temperature","min":-5,"max":5}]},
+{"key":"47","name":"WTC/Installer/Room_thermostat","read_cmd":"350902031C0A02","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"int16_celsius","position":1,"ha_profile":"sensor_diagnostic"}]},
+{"key":"55","name":"WTC/Installer/Switch_off_delay","read_cmd":"350902032E0102","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16_min","position":1,"ha_profile":"sensor_diagnostic"}]},
+{"key":"56","name":"WTC/Installer/Switch_on_delay","read_cmd":"35090203100102","write_cmd":"","interval":3600,"master":false,"fields":[{"name":"value","profile":"uint16_min","position":1,"ha_profile":"sensor_diagnostic"}]}
+]
