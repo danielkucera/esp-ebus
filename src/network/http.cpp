@@ -105,8 +105,8 @@ void setupHttpHandlers() {
   config.stack_size = 8192;
   config.lru_purge_enable = true;
   config.max_open_sockets = 2;
-  config.recv_wait_timeout = 10;
-  config.send_wait_timeout = 10;
+  config.recv_wait_timeout = 5;
+  config.send_wait_timeout = 3;
 
   if (httpd_start(&config_server, &config) != ESP_OK) {
     logger.error("Failed to start HTTP server");

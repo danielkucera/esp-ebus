@@ -44,6 +44,7 @@ esp_err_t LogsApi::handleLogsPage(httpd_req_t* req) {
 }
 
 esp_err_t LogsApi::handleLogs(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   uint64_t since_millis = 0;
   const size_t query_len = httpd_req_get_url_query_len(req);
   if (query_len > 0) {
@@ -68,25 +69,25 @@ esp_err_t LogsApi::handleLogs(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   instance_->logger_.fetchLogs(
-      [req](std::string_view chunk) {
-        httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+      [&response](std::string_view chunk) {
+        response.write(chunk);
       },
       since_millis);
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t LogsApi::handleLogsTimeRelation(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->logger_.fetchTimeRelation([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  instance_->logger_.fetchTimeRelation([&response](std::string_view chunk) {
+    response.write(chunk);
   });
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t LogsApi::handleTap(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   uint64_t since_millis = 0;
   const size_t query_len = httpd_req_get_url_query_len(req);
   if (query_len > 0) {
@@ -107,12 +108,11 @@ esp_err_t LogsApi::handleTap(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   DeviceStatus::monitor().fetchTap(
-      [req](std::string_view chunk) {
-        httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+      [&response](std::string_view chunk) {
+        response.write(chunk);
       },
       since_millis);
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 #endif

@@ -285,18 +285,20 @@ esp_err_t handleConfigDrift(httpd_req_t* req) {
   AppConfig::collectDrift(DeviceStatus::config(), requested, keys);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
-  });
-  auto root = writer.objectScope();
-  writer.writeField("staged", !keys.empty());
-  writer.appendKey("keys");
+  HttpUtils::ChunkedResponse response(req);
   {
-    auto arr = writer.arrayScope();
-    for (const auto& k : keys) writer.writeValue(std::string_view(k));
+    ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+      response.write(chunk);
+    });
+    auto root = writer.objectScope();
+    writer.writeField("staged", !keys.empty());
+    writer.appendKey("keys");
+    {
+      auto arr = writer.arrayScope();
+      for (const auto& k : keys) writer.writeValue(std::string_view(k));
+    }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 }  // namespace
 
@@ -436,13 +438,13 @@ bool ConfigManager::writeConfigJson(std::string_view body, std::string& error) {
 }
 
 esp_err_t ConfigManager::handleGet(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  fetchConfig([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  fetchConfig([&response](std::string_view chunk) {
+    response.write(chunk);
   });
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t ConfigManager::handleSet(httpd_req_t* req) {
