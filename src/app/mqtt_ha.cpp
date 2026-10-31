@@ -257,6 +257,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
   const std::string& dev_id = device_identifiers_;
 
   std::string_view field_name_sv = command->getFieldName(field_idx);
+  std::string_view state_field_name_sv =
+      command->getFieldCount() == 1 ? "value" : field_name_sv;
   std::string_view key_sv = command->getKey();
 
   char raw_object_id_buf[mqtt_ha_buffer_limits::max_raw_object_id_length];
@@ -359,8 +361,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
           writer.writeField("payload_on", payload_on_buf);
           writer.writeField("payload_off", payload_off_buf);
           snprintf(value_template_buf, sizeof(value_template_buf),
-                   "{{value_json.%.*s}}", (int)field_name_sv.size(),
-                   field_name_sv.data());
+                   "{{value_json.%.*s}}", (int)state_field_name_sv.size(),
+                   state_field_name_sv.data());
           writer.writeField("value_template", value_template_buf);
         }
 
@@ -384,8 +386,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
           writer.writeField("unit_of_measurement",
                             getFieldUnit(command, field_idx));
           snprintf(value_template_buf, sizeof(value_template_buf),
-                   "{{value_json.%.*s}}", (int)field_name_sv.size(),
-                   field_name_sv.data());
+                   "{{value_json.%.*s}}", (int)state_field_name_sv.size(),
+                   state_field_name_sv.data());
           writer.writeField("value_template", value_template_buf);
           writer.writeField("command_template", "{{value}}");
           writer.writeFieldFloat("min", getFieldMin(command, field_idx));
@@ -401,7 +403,7 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
         }
 
         if (profile && profile->key_value_count > 0) {
-          auto opt = createOptions(profile, field_name_sv);
+          auto opt = createOptions(profile, state_field_name_sv);
           if (component == "select") {
             {
               auto options = writer.arrayScope("options");
@@ -412,8 +414,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
           writer.writeField("value_template", opt.value_map);
         } else if (component == "sensor") {
           snprintf(value_template_buf, sizeof(value_template_buf),
-                   "{{value_json.%.*s}}", (int)field_name_sv.size(),
-                   field_name_sv.data());
+                   "{{value_json.%.*s}}", (int)state_field_name_sv.size(),
+                   state_field_name_sv.data());
           writer.writeField("value_template", value_template_buf);
         }
       },

@@ -67,7 +67,7 @@ void registerTempCommand() {
   std::string json =
       R"({"key":"01","name":"Outside_Temperature","read_cmd":"fe070009",)"
       R"("write_cmd":"","interval":0,"master":true,)"
-      R"("fields":[{"name":"value","profile":"data2b_celsius","position":1,)"
+      R"("fields":[{"name":"storageTemp","profile":"data2b_celsius","position":1,)"
       R"("ha_profile":"sensor_temperature"}]})";
   ebus::detail::JsonReader reader(json);
   command_manager.insertCommand(Command::fromJson(reader));
@@ -91,12 +91,13 @@ TEST_CASE("MqttHA publishes sensor discovery config", "[mqttha]") {
   REQUIRE(recorder.messages.size() == 1);
   const PublishedMessage& msg = recorder.messages[0];
   REQUIRE(msg.topic ==
-          "homeassistant/sensor/ebus820b80/01_outside_temperature_value/"
+          "homeassistant/sensor/ebus820b80/01_outside_temperature_storagetemp/"
           "config");
   REQUIRE(payloadContains(msg, "ebus820b80"));
   REQUIRE(payloadContains(msg, "unique_id"));
   REQUIRE(payloadContains(msg, "state_topic"));
   REQUIRE(payloadContains(msg, "device"));
+  REQUIRE(payloadContains(msg, R"("value_template":"{{value_json.value}}")"));
 }
 
 TEST_CASE("MqttHA remove publishes empty retained payload", "[mqttha]") {
@@ -110,7 +111,7 @@ TEST_CASE("MqttHA remove publishes empty retained payload", "[mqttha]") {
 
   REQUIRE(recorder.messages.size() == 1);
   REQUIRE(recorder.messages[0].topic ==
-          "homeassistant/sensor/ebus820b80/01_outside_temperature_value/"
+          "homeassistant/sensor/ebus820b80/01_outside_temperature_storagetemp/"
           "config");
   REQUIRE(recorder.messages[0].payload.empty());
 }
