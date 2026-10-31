@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <string_view>
 
 class StringPool {
@@ -11,7 +12,8 @@ class StringPool {
   static StringPool& instance();
 
   uint8_t intern(std::string_view str) {
-    if (str.empty() || count_ >= max_strings_) return 0;
+    if (str.empty() || str.size() > 255) return 0;
+    std::lock_guard<std::mutex> lock(mutex_);
 
     for (uint8_t i = 0; i < count_; i++) {
       if (lengths_[i] == str.size() &&
@@ -20,7 +22,8 @@ class StringPool {
       }
     }
 
-    if (buffer_offset_ + str.size() + 1 > buffer_size_) return 0;
+    if (count_ >= max_strings_ ||
+        buffer_offset_ + str.size() + 1 > buffer_size_) return 0;
 
     std::memcpy(buffer_ + buffer_offset_, str.data(), str.size());
     buffer_[buffer_offset_ + str.size()] = '\0';
@@ -31,17 +34,22 @@ class StringPool {
   }
 
   std::string_view lookup(uint8_t id) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (id == 0 || id > count_) return {};
     const uint8_t idx = id - 1;
     return std::string_view(buffer_ + offsets_[idx], lengths_[idx]);
   }
 
-  uint8_t count() const { return count_; }
+  uint8_t count() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return count_;
+  }
 
  private:
-  static constexpr size_t max_strings_ = 256;
+  static constexpr size_t max_strings_ = 255;
   static constexpr size_t buffer_size_ = 2048;
 
+  mutable std::mutex mutex_;
   char buffer_[buffer_size_]{};
   uint16_t offsets_[max_strings_]{};
   uint8_t lengths_[max_strings_]{};

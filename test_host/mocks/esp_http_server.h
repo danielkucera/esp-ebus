@@ -45,6 +45,8 @@ typedef struct httpd_req {
   int recv_fail_after = -1;
   int recv_failure_result = -1;
   size_t received_bytes = 0;
+  int chunk_fail_after = -1;
+  size_t chunk_send_calls = 0;
 } httpd_req_t;
 typedef struct httpd_data* httpd_handle_t;
 typedef struct httpd_uri httpd_uri_t;
@@ -82,6 +84,10 @@ inline esp_err_t httpd_resp_send(httpd_req_t* req, const char* buf,
 inline esp_err_t httpd_resp_send_chunk(httpd_req_t* req, const char* buf,
                                        ssize_t buf_len) {
   if (req == nullptr) return ESP_OK;
+  const size_t call = req->chunk_send_calls++;
+  if (req->chunk_fail_after >= 0 &&
+      call >= static_cast<size_t>(req->chunk_fail_after))
+    return ESP_FAIL;
   if (buf == nullptr || buf_len == 0) {
     req->chunks.emplace_back();
     return ESP_OK;

@@ -229,13 +229,13 @@ void UpgradeManager::fetchStatus(const ebus::JsonChunkVisitor& visitor) {
 }
 
 esp_err_t UpgradeManager::handleStatus(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  DeviceStatus::fetchStatus([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  DeviceStatus::fetchStatus([&response](std::string_view chunk) {
+    response.write(chunk);
   });
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 bool UpgradeManager::performHttpUpgrade(const std::string& url,
