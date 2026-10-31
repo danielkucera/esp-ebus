@@ -32,13 +32,13 @@ esp_err_t MetricsApi::handleMetricsPage(httpd_req_t* req) {
 }
 
 esp_err_t MetricsApi::handleMetrics(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  getEbusController().fetchMetrics([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  getEbusController().fetchMetrics([&response](std::string_view chunk) {
+    response.write(chunk);
   });
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t MetricsApi::handleMetricsReset(httpd_req_t* req) {

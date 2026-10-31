@@ -5,6 +5,7 @@
 #include "app/app_limits.hpp"
 #include "config/app_config_loader.hpp"
 #include "config/config_manager.hpp"
+#include "api/http_stub_state.hpp"
 
 // The ConfigManager instance backing these tests. NVS itself is the
 // in-memory host mock (test_host/mocks/config/nvs_mock.cpp), so each case
@@ -160,4 +161,27 @@ TEST_CASE("Empty stored configuration still supplies page defaults",
   REQUIRE(out.find("\"fields\":{") != std::string::npos);
   REQUIRE(out.find("\"ebusAddress\":{\"default\":\"ff\"}") !=
           std::string::npos);
+}
+
+TEST_CASE("Configuration drift JSON closes before the HTTP terminator", "[config_nvs]") {
+  config_manager.resetConfig();
+  HostHttpStub::clearRoutes();
+  ConfigManager::registerHandlers();
+  esp_err_t (*handler)(httpd_req_t*) = nullptr;
+  for (const auto& route : HostHttpStub::routes()) {
+    if (route.uri == "/api/v1/app/config/drift") handler = route.handler;
+  }
+  REQUIRE(handler != nullptr);
+  httpd_req_t req{};
+  REQUIRE(handler(&req) == ESP_OK);
+  std::string body;
+  for (const auto& chunk : req.chunks) body += chunk;
+  REQUIRE(ebus::detail::JsonReader::validate(body));
+  REQUIRE(req.chunks.back().empty());
+
+  httpd_req_t failed{};
+  failed.chunk_fail_after = 0;
+  REQUIRE(handler(&failed) == ESP_FAIL);
+  REQUIRE(failed.chunk_send_calls == 1);
+  REQUIRE(failed.chunks.empty());
 }
