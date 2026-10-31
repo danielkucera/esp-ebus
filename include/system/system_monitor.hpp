@@ -7,6 +7,8 @@
 #include <freertos/task.h>
 
 #include <atomic>
+
+#include "system/detail/monitor_schedule.hpp"
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -100,7 +102,7 @@ class SystemMonitor {
   HeapSample heap_trend_[heap_trend_capacity] = {};
   size_t heap_trend_index_ = 0;
   size_t heap_trend_count_ = 0;
-  uint32_t heap_trend_tick_ = 0;
+  app::detail::MonitorSchedule schedule_;
 };
 
 #endif
