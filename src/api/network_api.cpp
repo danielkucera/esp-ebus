@@ -31,10 +31,11 @@ bool NetworkApi::registerHandlers(httpd_handle_t server) {
 }
 
 esp_err_t NetworkApi::handleNetwork(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+    response.write(chunk);
   });
   {
     auto scope = writer.objectScope();
@@ -66,11 +67,11 @@ esp_err_t NetworkApi::handleNetwork(httpd_req_t* req) {
       appendSntpStatus(writer, DeviceStatus::config().sntp);
     }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t NetworkApi::handleWifiScan(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   wifi_scan_config_t scan_config = {};
   scan_config.show_hidden = true;
   scan_config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
@@ -96,8 +97,8 @@ esp_err_t NetworkApi::handleWifiScan(httpd_req_t* req) {
 
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+    response.write(chunk);
   });
 
   {
@@ -150,9 +151,8 @@ esp_err_t NetworkApi::handleWifiScan(httpd_req_t* req) {
       writer.writeField("authMode", auth_mode);
     }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
   esp_wifi_clear_ap_list();
-  return ESP_OK;
+  return response.finish();
 }
 
 #endif

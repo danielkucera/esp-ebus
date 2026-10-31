@@ -83,13 +83,13 @@ esp_err_t CommandsApi::handleCommandsPage(httpd_req_t* req) {
 }
 
 esp_err_t CommandsApi::handleCommands(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->command_manager_.fetchCommands([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  instance_->command_manager_.fetchCommands([&response](std::string_view chunk) {
+    response.write(chunk);
   });
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t CommandsApi::handleCommandsEvaluate(httpd_req_t* req) {

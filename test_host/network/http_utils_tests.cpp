@@ -281,3 +281,48 @@ TEST_CASE("registerRoute reports HTTP registration failures", "[http_utils]") {
           std::string::npos);
   HttpUtilsTestState::route_result = ESP_OK;
 }
+
+TEST_CASE("Chunked responses combine fragments without changing payload bytes", "[http_utils]") {
+  httpd_req_t req{};
+  HttpUtils::ChunkedResponse response(&req);
+  std::string payload(3500, 'x');
+  payload[0] = payload[1023] = payload[1024] = payload.back() = '\0';
+  for (size_t offset = 0; offset < payload.size(); offset += 7) {
+    response.write(std::string_view(payload).substr(offset, 7));
+  }
+  REQUIRE(response.finish() == ESP_OK);
+  std::string received;
+  for (const auto& chunk : req.chunks) received += chunk;
+  REQUIRE(received == payload);
+  REQUIRE(req.chunks.size() == 5); // Four data chunks and one terminator.
+  REQUIRE(req.chunk_send_calls == 5);
+  REQUIRE(req.chunks.back().empty());
+  REQUIRE(response.finish() == ESP_OK);
+  REQUIRE(req.chunks.size() == 5);
+}
+
+TEST_CASE("Chunked responses never retry a failed socket write", "[http_utils]") {
+  for (int successful_sends : {0, 1, 2}) {
+    httpd_req_t req{};
+    req.chunk_fail_after = successful_sends;
+    HttpUtils::ChunkedResponse response(&req);
+    for (int i = 0; i < 100; ++i) response.write(std::string(100, 'x'));
+    REQUIRE(response.finish() == ESP_FAIL);
+    REQUIRE(req.chunk_send_calls == static_cast<size_t>(successful_sends + 1));
+    REQUIRE(req.chunks.size() == static_cast<size_t>(successful_sends));
+    response.write("later data");
+    REQUIRE(response.finish() == ESP_FAIL);
+    REQUIRE(req.chunk_send_calls == static_cast<size_t>(successful_sends + 1));
+  }
+}
+
+TEST_CASE("Chunked responses propagate failures during final flush or termination", "[http_utils]") {
+  for (int successful_sends : {0, 1}) {
+    httpd_req_t req{};
+    req.chunk_fail_after = successful_sends;
+    HttpUtils::ChunkedResponse response(&req);
+    response.write("small response");
+    REQUIRE(response.finish() == ESP_FAIL);
+    REQUIRE(req.chunk_send_calls == static_cast<size_t>(successful_sends + 1));
+  }
+}

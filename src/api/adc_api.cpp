@@ -82,6 +82,7 @@ esp_err_t AdcApi::handleAdcPage(httpd_req_t* req) {
 }
 
 esp_err_t AdcApi::handleAdcRaw(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   if (!instance_->adc_.isRunning() && !instance_->adc_.begin()) {
     HttpUtils::sendErrorResponse(req, "500 Internal Server Error", "adc_raw",
                                  "ADC not running or failed to start");
@@ -132,27 +133,26 @@ esp_err_t AdcApi::handleAdcRaw(httpd_req_t* req) {
   httpd_resp_set_hdr(req, "X-ADC-Controller-Sample-Rate", tmp6);
 
   if (!instance_->adc_.streamRaw(
-          [req](std::string_view chunk) {
-            httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+          [&response](std::string_view chunk) {
+            response.write(chunk);
           },
           sample_rate, samples_per_channel, channel_mask))
     return ESP_FAIL;
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t AdcApi::handleAdcState(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   {
-    ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-      httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+    ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+      response.write(chunk);
     });
     auto scope = writer.objectScope();
     writer.writeField("running", instance_->adc_.isRunning());
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 esp_err_t AdcApi::handleAdcEnable(httpd_req_t* req) {
