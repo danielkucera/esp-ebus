@@ -178,7 +178,8 @@ TEST_CASE("Command writeValuePayload formats single and multi fields flat",
       cmd.writeValuePayload(writer);
     }
 
-    REQUIRE(out.find("\"middle_temperature\":") != std::string::npos);
+    REQUIRE(out.find("\"value\":") != std::string::npos);
+    REQUIRE(out.find("\"middle_temperature\"") == std::string::npos);
   }
 
   SECTION("Multi field") {
