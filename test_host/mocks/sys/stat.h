@@ -1,20 +1,5 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <cstdint>
-
-struct stat {
-  uint64_t st_size;
-  uint32_t st_mode;
-  uint32_t st_mtime;
-};
-
-inline int stat(const char* path, struct stat* buf) { return -1; }
-inline int remove(const char* path) { return -1; }
-
-#ifdef __cplusplus
-}
-#endif
+// Host persistence tests write real files. Use the host ABI and errno rather
+// than a fake stat() that always fails and leaves errno from an earlier call.
+#include_next <sys/stat.h>
