@@ -857,9 +857,7 @@ void Mqtt::handleValueUpdate(std::string_view key) {
         if (!field_name || !field_name[0]) field_name = "value";
 
         char topic_buf[128];
-        int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s_%s",
-                         (int)cmd->getName().size(), cmd->getName().data(),
-                         field_name);
+        int n = snprintf(topic_buf, sizeof(topic_buf), "values/%s", field_name);
         if (n <= 0 || (size_t)n >= sizeof(topic_buf)) continue;
         for (int j = 7; j < n; ++j)
           topic_buf[j] = (char)tolower((unsigned char)topic_buf[j]);

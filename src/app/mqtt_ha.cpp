@@ -286,16 +286,11 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
   }
 
   char state_topic_buf[mqtt_ha_buffer_limits::max_state_topic_length];
-  char state_name_buf[128];
   if (command->getFieldCount() > 1) {
     const std::string_view field_topic_name =
         field_name_sv.empty() ? "value" : field_name_sv;
-    int n = snprintf(state_name_buf, sizeof(state_name_buf), "%.*s_%.*s",
-                     (int)command->getName().size(), command->getName().data(),
-                     (int)field_topic_name.size(), field_topic_name.data());
-    if (n <= 0 || (size_t)n >= sizeof(state_name_buf)) return;
     createStateTopic(state_topic_buf, sizeof(state_topic_buf), "values",
-                     state_name_buf);
+                     field_topic_name);
   } else {
     createStateTopic(state_topic_buf, sizeof(state_topic_buf), "values",
                      command->getName());

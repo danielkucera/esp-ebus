@@ -126,11 +126,11 @@ TEST_CASE("MqttHA multi-field discovery uses per-field flat state topics",
 
   REQUIRE(recorder.messages.size() == 2);
   REQUIRE(payloadContains(recorder.messages[0],
-                          R"("state_topic":"ebus/820b80/values/temp01_temp01")"));
+                          R"("state_topic":"ebus/820b80/values/temp01")"));
   REQUIRE(payloadContains(recorder.messages[0],
                           R"("value_template":"{{value_json.value}}")"));
   REQUIRE(payloadContains(recorder.messages[1],
-                          R"("state_topic":"ebus/820b80/values/temp01_temp02")"));
+                          R"("state_topic":"ebus/820b80/values/temp02")"));
   REQUIRE(payloadContains(recorder.messages[1],
                           R"("value_template":"{{value_json.value}}")"));
 }
