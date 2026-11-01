@@ -132,7 +132,6 @@ bool Adc::configureController(uint32_t sample_rate,
   config.adc_pattern = adc_pattern_;
   config.sample_freq_hz = sample_rate;
   config.conv_mode = ADC_CONV_SINGLE_UNIT_1;
-  config.format = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
 
   const esp_err_t err = adc_continuous_config(adc_handle_, &config);
   if (err != ESP_OK) {
