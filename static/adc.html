@@ -20,6 +20,12 @@
             height: 320px;
             display: block;
             background: #fcfcfc;
+            cursor: grab;
+            touch-action: none;
+        }
+
+        #adcChart.is-dragging {
+            cursor: grabbing;
         }
 
         .adc-metrics {
@@ -95,6 +101,8 @@
             <button id="btnDisable">Disable ADC</button>
             <button id="btnRefresh">Run</button>
             <button id="btnSaveJson">Save JSON</button>
+            <button id="btnZoomIn">Zoom +</button>
+            <button id="btnZoomOut">Zoom -</button>
             <button id="btnResetZoom">Reset Zoom</button>
             <span id="status">...</span>
         </div>
@@ -146,6 +154,7 @@
         let liveSource = null;
         let zoomX = 1;
         let viewStartIndex = null; // null => auto-stick to latest data
+        let dragStart = null;
         let lastPointsByChannel = {};
         let hoverInfo = null;
         let lastRawJson = '';
@@ -182,6 +191,27 @@
             const maxStart = total - visibleCount;
             if (viewStartIndex === null) return maxStart;
             return clamp(viewStartIndex, 0, maxStart);
+        }
+
+        function zoomAt(anchorRatio, factor) {
+            const base = getPrimarySeries();
+            if (!base || base.length < 2) return;
+
+            const ratio = clamp(anchorRatio, 0, 1);
+            const oldVisible = getVisibleCount(base.length);
+            const oldStart = getViewStart(base.length, oldVisible);
+            const anchorIndex = oldStart + ratio * Math.max(0, oldVisible - 1);
+
+            zoomX = clamp(zoomX * factor, 1, 100);
+            const newVisible = getVisibleCount(base.length);
+            const maxStart = Math.max(0, base.length - newVisible);
+            viewStartIndex = clamp(
+                Math.round(anchorIndex - ratio * Math.max(0, newVisible - 1)),
+                0,
+                maxStart
+            );
+            hoverInfo = null;
+            drawChart();
         }
 
         function rawToMilliVolts(raw) {
@@ -777,9 +807,12 @@
         document.getElementById('btnDisable').addEventListener('click', disableAdc);
         document.getElementById('btnRefresh').addEventListener('click', handleAdc);
         document.getElementById('btnSaveJson').addEventListener('click', saveJson);
+        document.getElementById('btnZoomIn').addEventListener('click', () => zoomAt(0.5, 1.2));
+        document.getElementById('btnZoomOut').addEventListener('click', () => zoomAt(0.5, 1 / 1.2));
         document.getElementById('btnResetZoom').addEventListener('click', () => {
             zoomX = 1;
             viewStartIndex = null;
+            hoverInfo = null;
             drawChart();
         });
         document.getElementById('sampleRate').addEventListener('change', updateSampleSettings);
@@ -796,24 +829,63 @@
             e.preventDefault();
 
             const rect = canvas.getBoundingClientRect();
-            const relX = clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-
-            const oldVisible = getVisibleCount(base.length);
-            const oldStart = getViewStart(base.length, oldVisible);
-            const anchorIndex = oldStart + relX * oldVisible;
-
-            if (e.deltaY < 0) zoomX *= 1.2;
-            else zoomX /= 1.2;
-            zoomX = clamp(zoomX, 1, 100);
-
-            const newVisible = getVisibleCount(base.length);
-            const maxStart = Math.max(0, base.length - newVisible);
-            viewStartIndex = clamp(Math.round(anchorIndex - relX * newVisible), 0, maxStart);
-
-            drawChart();
+            const chartLeft = 96;
+            const chartWidth = Math.max(1, rect.width - chartLeft - 8);
+            const relX = (e.clientX - rect.left - chartLeft) / chartWidth;
+            zoomAt(relX, e.deltaY < 0 ? 1.2 : 1 / 1.2);
         }, { passive: false });
 
+        canvas.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            const base = getPrimarySeries();
+            if (!base || base.length < 2) return;
+            const visibleCount = getVisibleCount(base.length);
+            if (base.length <= visibleCount) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            if (x < 96 || x > rect.width - 8) return;
+
+            dragStart = {
+                clientX: e.clientX,
+                viewStart: getViewStart(base.length, visibleCount)
+            };
+            hoverInfo = null;
+            canvas.classList.add('is-dragging');
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (!dragStart) return;
+            const base = getPrimarySeries();
+            const visibleCount = getVisibleCount(base.length);
+            const plotWidth = Math.max(1, canvas.clientWidth - 96 - 8);
+            const deltaSamples = (dragStart.clientX - e.clientX) *
+                Math.max(0, visibleCount - 1) / plotWidth;
+            viewStartIndex = clamp(
+                Math.round(dragStart.viewStart + deltaSamples),
+                0,
+                Math.max(0, base.length - visibleCount)
+            );
+            drawChart();
+            e.preventDefault();
+        });
+
+        function endChartDrag(e) {
+            if (!dragStart) return;
+            dragStart = null;
+            canvas.classList.remove('is-dragging');
+            if (canvas.hasPointerCapture(e.pointerId)) {
+                canvas.releasePointerCapture(e.pointerId);
+            }
+        }
+
+        canvas.addEventListener('pointerup', endChartDrag);
+        canvas.addEventListener('pointercancel', endChartDrag);
+
         canvas.addEventListener('mousemove', (e) => {
+            if (dragStart) return;
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
