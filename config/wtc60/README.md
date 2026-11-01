@@ -2,12 +2,12 @@
 
 These files extend the command export from 2026-10-31 14:03:55. They use the
 same JSON array and compact, one-command-per-line layout as `../wtc25a/wtc25a.json`.
-Together they contain 90 commands, including 12 writable commands. Load the
+Together they contain 93 commands, including 12 writable commands. Load the
 boiler file and whichever heating circuits are present:
 
 | File | Contents | Commands | Writable |
 |---|---|---|---|
-| [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 12 | 0 |
+| [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 15 | 0 |
 | [`wtc60-hc2.json`](wtc60-hc2.json) | Downstairs heating circuit | 32 | 4 |
 | [`wtc60-hc3.json`](wtc60-hc3.json) | Upstairs heating circuit | 34 | 4 |
 | [`wtc60-hc4.json`](wtc60-hc4.json) | Underfloor heating circuit | 12 | 4 |
@@ -115,6 +115,15 @@ and hot-water setpoint. `wtc_device_identification` exposes the fixed ASCII
 manufacturer marker and remaining identifier bytes from `f6 07 04 00`.
 `wtc_flow` and `wtc_flue` actively read boiler temperatures every 10 seconds;
 `wtc_dhw` and `wtc_outside` remain available as before.
+
+The 2026-11-01 log also contains `fe 07 04` broadcast identification frames and
+one `fe 07 00 09` bus-time frame. These are exposed as raw hex because the
+broadcast identification is not tied to a known device address, and the bus
+time payload's field offsets have not been verified for this frame. The
+payload-free `fe 07 ff 00` broadcast is decoded by `wtc_sign_of_life` as the
+standard eBUS sign-of-life message. It is a bus-wide definition, not specific
+to circuit 2; the source address (observed here as `0x70`) remains in the raw
+telegram.
 
 The `500a` flag bytes are retained as hex: byte 3 bit 3 is flame, bits 4/5 are
 gas valves, bit 6 is pump and bit 7 is error; byte 4 bit 1 is summer/winter and
@@ -237,11 +246,13 @@ profiles are built in. Temperature fields use the built-in HA profiles
 `sensor_temperature` and `number_temperature`; no profile overlays are required.
 
 Each compact JSON file fits the 8192-byte HTTP body limit. Loading all four uses
-90 of the configured 96 command slots, 12 of 16 write slots, and 13 of 16
-field-override slots. Its unique keys, names and field names occupy 7045 of the
-8192 string-pool bytes on a fresh load. Additional commands and older names
-retained in the runtime pool also consume that space; reboot after saving a
-replacement set if needed.
+93 of the configured 96 command slots, 12 of 16 write slots, and 13 of 16
+field-override slots. Its unique keys, names and field names occupy 7241 bytes
+in the string pool on a fresh load. The `master` branch currently provides only
+2048 bytes, so this command set requires the separate StringPool-capacity
+increase to 8192 bytes. This WTC-60 change does not include that increase.
+Additional commands and older names retained in the runtime pool also consume
+space; reboot after saving a replacement set if needed.
 
 Upload merges commands by key; it does not remove unrelated existing commands.
 To load this complete installation, run from the repository root:

@@ -10,5 +10,8 @@
 {"key":"wtc_boiler_identification","name":"Weishaupt/Boiler/Device_identification_raw","read_cmd":"08070400","write_cmd":"","interval":0,"master":false,"fields":[{"name":"identifier_prefix","profile":"hex8","position":1},{"name":"identifier_suffix","profile":"hex2","position":9}]},
 {"key":"wtc_flow","name":"Weishaupt/Boiler/Flow_temperature","read_cmd":"085003019e","write_cmd":"","interval":10,"master":false,"fields":[{"name":"value","profile":"uint16_celsius","position":2,"ha_profile":"sensor_temperature"}]},
 {"key":"wtc_flue","name":"Weishaupt/Boiler/Flue_gas_temperature","read_cmd":"085003019f","write_cmd":"","interval":10,"master":false,"fields":[{"name":"value","profile":"uint16_celsius","position":2,"ha_profile":"sensor_temperature"}]},
-{"key":"wtc_outside","name":"Weishaupt/Outside_temperature","read_cmd":"fe500a0d","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"int8_celsius","position":10,"ha_profile":"sensor_temperature"}]}
+{"key":"wtc_outside","name":"Weishaupt/Outside_temperature","read_cmd":"fe500a0d","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"int8_celsius","position":10,"ha_profile":"sensor_temperature"}]},
+{"key":"wtc_broadcast_identification","name":"Weishaupt/Broadcast_device_identification_raw","read_cmd":"fe0704","write_cmd":"","interval":0,"master":true,"fields":[{"name":"identifier_prefix","profile":"hex8","position":1},{"name":"identifier_suffix","profile":"hex2","position":9}]},
+{"key":"wtc_bus_time_raw","name":"Weishaupt/Boiler/Bus_time_raw","read_cmd":"fe070009","write_cmd":"","interval":0,"master":true,"fields":[{"name":"payload_prefix","profile":"hex8","position":1},{"name":"payload_suffix","profile":"hex1","position":9}]},
+{"key":"wtc_sign_of_life","name":"Weishaupt/Bus/Sign_of_life","read_cmd":"fe07ff","write_cmd":"","interval":0,"master":true,"fields":[]}
 ]

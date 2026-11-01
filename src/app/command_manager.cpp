@@ -430,14 +430,23 @@ void CommandManager::updateData(const ebus::ProtocolInfo& info) {
   }
 
   auto update = [this](Command* cmd, const ebus::ProtocolInfo& info) {
-    if (cmd->getFieldCount() == 0) return;
-
     bool is_master = cmd->getMaster();
     size_t data_len = 0;
     if (is_master) {
       if (info.master_view.size() >= 5) data_len = info.master_view[4];
     } else {
       if (info.slave_view.size() >= 1) data_len = info.slave_view[0];
+    }
+
+    if (cmd->getFieldCount() == 0) {
+      if (cmd->getActive() || data_len != 0) return;
+
+      cmd->setLast((uint32_t)(esp_timer_get_time() / 1000ULL));
+      cmd->setSessionId(info.session_id);
+      if (data_updated_log_callback_) {
+        data_updated_log_callback_(cmd->getKey());
+      }
+      return;
     }
 
     if (data_len == 0) return;
