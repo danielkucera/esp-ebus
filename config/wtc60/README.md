@@ -8,20 +8,20 @@ boiler file and whichever heating circuits are present:
 | File | Contents | Commands | Writable |
 |---|---|---|---|
 | [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 15 | 0 |
-| [`wtc60-hc2.json`](wtc60-hc2.json) | Downstairs heating circuit | 32 | 4 |
-| [`wtc60-hc3.json`](wtc60-hc3.json) | Upstairs heating circuit | 34 | 4 |
-| [`wtc60-hc4.json`](wtc60-hc4.json) | Underfloor heating circuit | 12 | 4 |
+| [`wtc60-hc2.json`](wtc60-hc2.json) | Circuit 2 | 32 | 4 |
+| [`wtc60-hc3.json`](wtc60-hc3.json) | Circuit 3 | 34 | 4 |
+| [`wtc60-hc4.json`](wtc60-hc4.json) | Circuit 4 | 12 | 4 |
 
 Each file is independently uploadable. Keys are unique across the four files;
 the adapter merges them into one command set. There is no combined JSON file
 to maintain alongside these definitions. Splitting the files does not reduce
 runtime memory when all circuits are loaded.
 
-| Circuit | Location | WCM-FS read slave | WCM-FS write master | Mixer |
+| Circuit | WCM-FS read slave | WCM-FS write master | Mixer |
 |---|---|---|---|---|
-| 2 | Downstairs | `75` | `70` | `51` |
-| 3 | Upstairs | `f5` | `f0` | `52` |
-| 4 | Underfloor heating | `1c` | `17` | `53` |
+| 2 | `75` | `70` | `51` |
+| 3 | `f5` | `f0` | `52` |
+| 4 | `1c` | `17` | `53` |
 
 Addresses and circuit numbers are installation-specific. This is a WTC-60 with
 WCM-FS controllers, WCM-EM mixers and an official app connected through WCM-COM
@@ -222,8 +222,8 @@ may currently run at normal or reduced level. Other byte values are undocumented
 
 ## Verification limits
 
-- Existing temperature commands, addresses, intervals and limits are preserved.
-  The circuit 4 presence name is corrected to `Circuit_4_Underfloor_heating`.
+- Existing command keys, temperatures, addresses, intervals and limits are
+  preserved. Command names use abstract circuit numbers, not room locations.
 - Normal/reduced setpoint writes were captured for all three circuits during the
   earlier investigation. Circuit 2 mode and presence writes were captured through
   the official app; this is protocol evidence, not a test of adapter-issued writes.
@@ -247,7 +247,7 @@ profiles are built in. Temperature fields use the built-in HA profiles
 
 Each compact JSON file fits the 8192-byte HTTP body limit. Loading all four uses
 93 of the configured 96 command slots, 12 of 16 write slots, and 13 of 16
-field-override slots. Its unique keys, names and field names occupy 7241 bytes
+field-override slots. Its unique keys, names and field names occupy 6355 bytes
 in the string pool on a fresh load. The `master` branch currently provides only
 2048 bytes, so this command set requires the separate StringPool-capacity
 increase to 8192 bytes. This WTC-60 change does not include that increase.
