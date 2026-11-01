@@ -2,26 +2,26 @@
 
 These files extend the command export from 2026-10-31 14:03:55. They use the
 same JSON array and compact, one-command-per-line layout as `../wtc25a/wtc25a.json`.
-Together they contain 30 commands, including 12 writable commands. Load the
+Together they contain 93 commands, including 12 writable commands. Load the
 boiler file and whichever heating circuits are present:
 
 | File | Contents | Commands | Writable |
 |---|---|---|---|
-| [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 4 | 0 |
-| [`wtc60-hc2.json`](wtc60-hc2.json) | Downstairs heating circuit | 9 | 4 |
-| [`wtc60-hc3.json`](wtc60-hc3.json) | Upstairs heating circuit | 9 | 4 |
-| [`wtc60-hc4.json`](wtc60-hc4.json) | Underfloor heating circuit | 8 | 4 |
+| [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 15 | 0 |
+| [`wtc60-hc2.json`](wtc60-hc2.json) | Circuit 2 | 32 | 4 |
+| [`wtc60-hc3.json`](wtc60-hc3.json) | Circuit 3 | 34 | 4 |
+| [`wtc60-hc4.json`](wtc60-hc4.json) | Circuit 4 | 12 | 4 |
 
 Each file is independently uploadable. Keys are unique across the four files;
 the adapter merges them into one command set. There is no combined JSON file
 to maintain alongside these definitions. Splitting the files does not reduce
 runtime memory when all circuits are loaded.
 
-| Circuit | Location | WCM-FS read slave | WCM-FS write master | Mixer |
+| Circuit | WCM-FS read slave | WCM-FS write master | Mixer |
 |---|---|---|---|---|
-| 2 | Downstairs | `75` | `70` | `51` |
-| 3 | Upstairs | `f5` | `f0` | `52` |
-| 4 | Underfloor heating | `1c` | `17` | `53` |
+| 2 | `75` | `70` | `51` |
+| 3 | `f5` | `f0` | `52` |
+| 4 | `1c` | `17` | `53` |
 
 Addresses and circuit numbers are installation-specific. This is a WTC-60 with
 WCM-FS controllers, WCM-EM mixers and an official app connected through WCM-COM
@@ -94,14 +94,66 @@ Celsius; clients must not multiply them by ten themselves.
 | `hcN_flow` | Measured flow temperature | Read only | Circuits 2/3: `5014` response, position 3, DATA2B; circuit 4: mixer `53`, `0x000f`, INT16 /10 | Passive / 30 s |
 | `hcN_operating_level` | Current operating level | Read only, circuits **2 and 3 only** | `5014` master, position 1, UINT8 | Passive |
 
+The HC3 export also includes `hc3_flow_poll`, a 30-second active read of mixer
+parameter `0x000f` (INT16 /10), matching the existing HC4 mixer-flow read.
+It exposes the separately polled value without replacing the passive `hc3_flow`
+field or creating a duplicate Home Assistant sensor.
+
+The HC3 file now polls the observed minimum and maximum supply-temperature
+registers (`0x012b` and `0x0028`) as `hc3_supply_min` and `hc3_supply_max`.
+The log shows writes of 8.0 °C and 65.0 °C, respectively.
+
 Passive fields use the firmware's one-based payload positions. No circuit 4
 `5014` status telegram was identified, so no `hc4_operating_level` command is
 invented. Use its selected mode and active room setpoint to inspect its settings;
 a selected time program alone does not tell you which operating level is active.
 
-The four exported boiler commands are preserved: `wtc_flow` and `wtc_flue`
-actively read boiler temperatures every 10 seconds; `wtc_dhw` and `wtc_outside`
-decode the passive `500a` broadcast.
+The boiler commands decode the passive `500a` broadcast into status, operating
+phase, flags, temperatures, outside temperature and trend. The controller's
+`0507` telegrams decode demand, requested temperature, pressure, output degree
+and hot-water setpoint. `wtc_device_identification` exposes the fixed ASCII
+manufacturer marker and remaining identifier bytes from `f6 07 04 00`.
+`wtc_flow` and `wtc_flue` actively read boiler temperatures every 10 seconds;
+`wtc_dhw` and `wtc_outside` remain available as before.
+
+The 2026-11-01 log also contains `fe 07 04` broadcast identification frames and
+one `fe 07 00 09` bus-time frame. These are exposed as raw hex because the
+broadcast identification is not tied to a known device address, and the bus
+time payload's field offsets have not been verified for this frame. The
+payload-free `fe 07 ff 00` broadcast is decoded by `wtc_sign_of_life` as the
+standard eBUS sign-of-life message. It is a bus-wide definition, not specific
+to circuit 2; the source address (observed here as `0x70`) remains in the raw
+telegram.
+
+The `500a` flag bytes are retained as hex: byte 3 bit 3 is flame, bits 4/5 are
+gas valves, bit 6 is pump and bit 7 is error; byte 4 bit 1 is summer/winter and
+bit 7 is heating/DHW selection. The upstream definitions identify the remaining
+bits as unknown. Meanings and units for `0902`/`0903` parameter IDs are not
+assigned without a matching definition; observed raw values are retained below.
+
+The larger 2026-11-01 log also contains unlabelled `0902` reads and `0704`
+identification replies. The observed `0902` reads are exposed as raw UINT16
+values under `*_mixer_parameter_*_raw` and `*_controller_parameter_*_raw`
+keys; their meanings and units are not known. Device identification replies are
+split into raw 8-byte and 2-byte hex fields. The boiler's `085003018b` response
+is exposed as a raw 5-byte hex field. These entries preserve the observed data
+without presenting an unsupported semantic interpretation.
+
+The same log captures seven `0903` writes each on circuits 2 and 3. Registers
+`0x0a20`, `0x0285`, `0x0973`, `0x0141` and `0x09b1` have observed values `0`,
+`0`, `2`, `2` and `180`; passive capture commands expose these as raw UINT16
+without transmitting writes. Supply-temperature writes to `0x0028` and `0x012b`
+are decoded as INT16 /10: 65.0 °C maximum and 8.0 °C minimum. Meanings for the
+other parameter IDs remain unconfirmed; the captures are not writable commands.
+
+These mappings were cross-checked against the upstream
+[`f6..sc.csv`](https://github.com/J0EK3R/ebusd-configuration-weishaupt/blob/master/weishaupt/f6..sc.csv),
+[`51..hc2.csv`](https://github.com/J0EK3R/ebusd-configuration-weishaupt/blob/master/weishaupt/51..hc2.csv)
+and [`hc.expert.inc`](https://github.com/J0EK3R/ebusd-configuration-weishaupt/blob/master/weishaupt/hc.expert.inc)
+definitions, plus the independent
+[WTC-OB telegram notes](https://github.com/B-o-r-i-s-M/Weishaupt-WTC-OB-ebusd-Home-Assistant/blob/main/docs/03-protokoll.md).
+Those projects cover different installations and models, so only matching
+service layouts, parameters and field types are reused here.
 
 ## Selected operating mode: valid write values
 
@@ -170,8 +222,8 @@ may currently run at normal or reduced level. Other byte values are undocumented
 
 ## Verification limits
 
-- Existing temperature commands, addresses, intervals and limits are preserved.
-  The circuit 4 presence name is corrected to `Circuit_4_Underfloor_heating`.
+- Existing command keys, temperatures, addresses, intervals and limits are
+  preserved. Command names use abstract circuit numbers, not room locations.
 - Normal/reduced setpoint writes were captured for all three circuits during the
   earlier investigation. Circuit 2 mode and presence writes were captured through
   the official app; this is protocol evidence, not a test of adapter-issued writes.
@@ -193,11 +245,14 @@ Use firmware with the Weishaupt encoder described in
 profiles are built in. Temperature fields use the built-in HA profiles
 `sensor_temperature` and `number_temperature`; no profile overlays are required.
 
-Each compact JSON file fits the 8192-byte HTTP body limit. Loading all four uses 30 of the configured
-96 command slots, 12 of 16 write slots, and 9 of 16 field-override slots. Its
-unique keys, names and field names occupy 1900 of the 2048 string-pool bytes on
-a fresh load. Additional commands and older names retained in the runtime pool
-also consume that space; reboot after saving a replacement set if needed.
+Each compact JSON file fits the 8192-byte HTTP body limit. Loading all four uses
+93 of the configured 96 command slots, 12 of 16 write slots, and 13 of 16
+field-override slots. Its unique keys, names and field names occupy 6355 bytes
+in the string pool on a fresh load. The `master` branch currently provides only
+2048 bytes, so this command set requires the separate StringPool-capacity
+increase to 8192 bytes. This WTC-60 change does not include that increase.
+Additional commands and older names retained in the runtime pool also consume
+space; reboot after saving a replacement set if needed.
 
 Upload merges commands by key; it does not remove unrelated existing commands.
 To load this complete installation, run from the repository root:

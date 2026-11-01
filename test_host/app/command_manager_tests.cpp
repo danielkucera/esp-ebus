@@ -223,6 +223,50 @@ TEST_CASE("CommandManager updateData sets data", "[CommandManager]") {
   REQUIRE(found->getData().size() > 0);
 }
 
+TEST_CASE("CommandManager logs passive commands without payload",
+          "[CommandManager]") {
+  command_manager.wipeCommands();
+  std::string logged_key;
+  size_t log_count = 0;
+  command_manager.setDataUpdatedLogCallback(
+      [&](std::string_view key) {
+        logged_key = key;
+        ++log_count;
+      });
+
+  std::string json =
+      R"({"key":"wtc_sign_of_life","name":"Weishaupt/Bus/Sign_of_life",)"
+      R"("read_cmd":"fe07ff","write_cmd":"","interval":0,"master":true,)"
+      R"("fields":[]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+  command_manager.insertCommand(cmd);
+
+  uint8_t master_bytes[] = {0x70, 0xfe, 0x07, 0xff, 0x00};
+  ebus::ProtocolInfo info{};
+  info.master_view = ebus::ByteView(master_bytes, sizeof(master_bytes));
+  info.session_id = 123;
+  command_manager.updateData(info);
+
+  Command* found = command_manager.findCommand("wtc_sign_of_life");
+  REQUIRE(found != nullptr);
+  REQUIRE(logged_key == "wtc_sign_of_life");
+  REQUIRE(found->getLast() > 0);
+  REQUIRE(found->getSessionId() == 123);
+  REQUIRE(found->getData().empty());
+  char log_message[128];
+  size_t log_length = found->writeLogMessage(log_message, sizeof(log_message));
+  REQUIRE(std::string_view(log_message, log_length).find(
+              "Weishaupt/Bus/Sign_of_life") != std::string_view::npos);
+
+  uint8_t master_with_payload[] = {0x70, 0xfe, 0x07, 0xff, 0x01, 0x42};
+  info.master_view =
+      ebus::ByteView(master_with_payload, sizeof(master_with_payload));
+  command_manager.updateData(info);
+  REQUIRE(log_count == 1);
+  command_manager.setDataUpdatedLogCallback({});
+}
+
 TEST_CASE("CommandManager updateData stores full payload for position>1",
           "[CommandManager]") {
   command_manager.wipeCommands();
