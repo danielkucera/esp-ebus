@@ -1,0 +1,3 @@
+# ebus-profile-gen dev requirements
+# Pure stdlib by default. Add only if strictly needed.
+# e.g. pyyaml==6.0.2 if tsp parsing requires YAML-like preprocessing

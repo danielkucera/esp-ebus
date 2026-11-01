@@ -63,12 +63,30 @@ class Command {
   std::string_view getKey() const;
   uint8_t getKeyId() const;
   std::string_view getName() const;
-  ebus::ByteView getReadCmd() const;
+
+  // Compact telegram identity (ebusd model): zz + id (read) + wid (write).
+  // Wire telegrams are built on demand; NN is derived from the id length
+  // unless an explicit override (nn_ovr) was parsed.
+  ebus::ByteView getZz() const;
+  ebus::ByteView getId() const;
+  ebus::ByteView getWid() const;
+  // Explicit read-NN override (legacy read_cmd where NN != len(id)-2).
+  bool hasNnOverride() const;
+  ebus::ByteView getNn() const;
+  // Builds the read master telegram ZZ id[0] id[1] NN id[2..] into out;
+  // returns the length, or 0 when there is no id or cap is too small.
+  size_t buildReadCmd(uint8_t* out, size_t cap) const;
+  // Builds the complete write master telegram ZZ wid[0] wid[1] NN
+  // wid[2..] + value. NN = legacy write_cmd NN when one was parsed,
+  // otherwise len(wid)-2 + value.size(). Simple write_type only; empty
+  // when the command is not writable.
+  ebus::Sequence buildWriteCmd(ebus::ByteView value) const;
 
   bool hasWriteCmd() const;
-  ebus::ByteView getWriteCmd(const class CommandManager& command_manager) const;
-  void setWriteCmd(PollSequence&& cmd, class CommandManager& command_manager);
 
+  // Builds the full write frame for the command's write_type: buildWriteCmd
+  // for simple, the weishaupt 5023 encoding for weishaupt. Empty for
+  // read-only commands, empty values and rejected encodings.
   ebus::Sequence buildWriteSequence(const class CommandManager& manager,
                                     ebus::ByteView value) const;
 
@@ -120,11 +138,26 @@ class Command {
   size_t writeLogMessage(char* buf, size_t len) const;
 
   static Command fromJson(ebus::detail::JsonReader& reader);
-  static Command fromTabular(ebus::detail::JsonReader& reader);
+  // legacy: rows carry read_cmd/write_cmd wire hex instead of zz/id/wid.
+  // has_nn: compact rows include the optional nn column (see saveCommands;
+  // sniffed from the header row by the loaders).
+  static Command fromTabular(ebus::detail::JsonReader& reader, bool legacy,
+                             bool has_nn = true);
 
   static std::string_view evaluate(ebus::detail::JsonReader& reader);
 
  private:
+  // Parsers shared by fromJson/fromTabular. Compact id/wid carry 2..6
+  // bytes (PB SB DD...); legacy read_cmd/write_cmd carry the full wire
+  // hex (ZZ PB SB NN D...): read keeps NN only when it differs from
+  // len(id)-2 (explicit override), write keeps its NN as a candidate -
+  // the value length is unknowable at parse time, so buildWriteCmd
+  // decides between the stored and the derived NN.
+  void setIdBytes(ebus::ByteView bytes);
+  void setWidBytes(ebus::ByteView bytes);
+  void setLegacyReadCmd(ebus::ByteView bytes);
+  void setLegacyWriteCmd(ebus::ByteView bytes);
+
   uint32_t session_id_ = 0;
   uint16_t poll_id_ = 0;
   uint32_t last_ = 0;
@@ -132,9 +165,17 @@ class Command {
 
   uint8_t key_id_ = 0;
   uint8_t name_id_ = 0;
-  PollSequence read_cmd_ = {};
-  uint8_t write_cmd_idx_ =
-      0;  // 0 = none, 1-based index into CommandMmanager::write_cmds_
+  uint8_t zz_ = 0;
+  uint8_t id_len_ = 0;
+  uint8_t id_[6] = {};
+  uint8_t wid_len_ = 0;
+  uint8_t wid_[6] = {};
+  bool has_nn_ovr_ = false;
+  uint8_t nn_ovr_ = 0;
+  // Legacy write-NN candidate (in-memory only, never serialized): the
+  // effective write NN is wnn_ when set, the derived one otherwise.
+  bool has_wnn_ = false;
+  uint8_t wnn_ = 0;
   uint16_t interval_ = 60;
   bool master_ = false;
   command_types::WriteType write_type_ = command_types::WriteType::simple;

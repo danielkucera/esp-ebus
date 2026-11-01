@@ -329,11 +329,14 @@ bool App::initServices() {
       getEbusController().removePollItem(cmd->getPollId());
       cmd->setPollId(0);
     }
-    // Add new poll item if active and has a valid read command
-    if (cmd->getActive() && !cmd->getReadCmd().empty()) {
+    // Add new poll item if active and has a valid read command.
+    // addPollItem copies the bytes, so the stack buffer is fine.
+    uint8_t read_buf[10];
+    const size_t read_len = cmd->buildReadCmd(read_buf, sizeof(read_buf));
+    if (cmd->getActive() && read_len > 0) {
       std::string_view key = cmd->getKey();
-      uint32_t id = getEbusController().addPollItem(3, cmd->getReadCmd(),
-                                                    cmd->getInterval() * 1000);
+      uint32_t id = getEbusController().addPollItem(
+          3, ebus::ByteView(read_buf, read_len), cmd->getInterval() * 1000);
       char log_buf[128];
       snprintf(log_buf, sizeof(log_buf),
                "Re-registering Poll ID %lu for key '%.*s'", (unsigned long)id,

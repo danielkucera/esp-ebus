@@ -52,43 +52,51 @@ const char* Command::getWriteTypeName() const {
   }
 }
 
-ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
+ebus::Sequence Command::buildWriteSequence(const CommandManager&,
                                            ebus::ByteView value) const {
-  auto prefix = getWriteCmd(manager);
-  if (prefix.empty() || value.empty()) return {};
+  if (value.empty() || wid_len_ < 2) return {};
 
   if (write_type_ == command_types::WriteType::simple) {
-    auto result = ebus::makeSequence(prefix);
-    result.append(ebus::makeSequence(value));
-    return result;
-  } else if (write_type_ == command_types::WriteType::weishaupt) {
-    // Prefix: destination, PB, SB, NN, checksum placeholder, parameter ID.
-    constexpr size_t prefix_size = 7;
-    constexpr size_t value_size = 2;
-    constexpr size_t checksum_offset = 4;
-    constexpr size_t parameter_offset = checksum_offset + 1;
-    constexpr uint8_t suffix[] = {0x5d, 0x01, 0x00, 0x00};
+    return buildWriteCmd(value);
+  }
+  if (write_type_ != command_types::WriteType::weishaupt) return {};
 
-    if (prefix.size() != prefix_size || prefix[1] != 0x50 ||
-        prefix[2] != 0x23 || prefix[3] != 9 || value.size() != value_size) {
-      return {};
-    }
+  // Prefix: destination, PB, SB, NN, checksum placeholder, parameter ID.
+  constexpr size_t prefix_size = 7;
+  constexpr size_t value_size = 2;
+  constexpr size_t suffix_size = 4;
+  constexpr size_t checksum_offset = 4;
+  constexpr size_t parameter_offset = checksum_offset + 1;
+  constexpr uint8_t suffix[] = {0x5d, 0x01, 0x00, 0x00};
 
-    auto result = ebus::makeSequence(prefix);
-    result.append(ebus::makeSequence(value));
-    result.append(ebus::makeSequence(ebus::ByteView(suffix, sizeof(suffix))));
-
-    // Cover the parameter ID, encoded value and suffix, excluding the header.
-    const ebus::ByteView payload(result.data() + parameter_offset,
-                                 result.size() - parameter_offset);
-    const uint8_t checksum = weishauptChecksum(payload);
-    uint8_t frame[prefix_size + value_size + sizeof(suffix)];
-    std::copy(result.begin(), result.end(), frame);
-    frame[checksum_offset] = checksum;
-    return ebus::makeSequence(ebus::ByteView(frame, sizeof(frame)));
-  } else {
+  if (value.size() != value_size || wid_len_ != prefix_size - 2 ||
+      wid_[0] != 0x50 || wid_[1] != 0x23) {
     return {};
   }
+
+  // The weishaupt data bytes are crc placeholder + parameter + value +
+  // suffix; legacy write_cmd carries the real NN as a candidate.
+  const uint8_t derived_nn =
+      static_cast<uint8_t>(wid_len_ - 2 + value.size() + suffix_size);
+  const uint8_t nn = has_wnn_ ? wnn_ : derived_nn;
+  if (nn != 9) return {};
+
+  uint8_t frame[prefix_size + value_size + suffix_size];
+  frame[0] = zz_;
+  frame[1] = wid_[0];
+  frame[2] = wid_[1];
+  frame[3] = nn;
+  frame[checksum_offset] = wid_[2];
+  frame[checksum_offset + 1] = wid_[3];
+  frame[checksum_offset + 2] = wid_[4];
+  std::memcpy(frame + prefix_size, value.data(), value.size());
+  std::memcpy(frame + prefix_size + value_size, suffix, suffix_size);
+
+  // Cover the parameter ID, encoded value and suffix, excluding the header.
+  const ebus::ByteView payload(frame + parameter_offset,
+                               sizeof(frame) - parameter_offset);
+  frame[checksum_offset] = weishauptChecksum(payload);
+  return ebus::makeSequence(ebus::ByteView(frame, sizeof(frame)));
 }
 
 const uint32_t& Command::getSessionId() const { return session_id_; }
@@ -119,36 +127,111 @@ std::string_view Command::getName() const {
   return StringPool::instance().lookup(name_id_);
 }
 
-ebus::ByteView Command::getReadCmd() const {
-  return ebus::ByteView(read_cmd_.data(), read_cmd_.size());
+ebus::ByteView Command::getZz() const { return ebus::ByteView(&zz_, 1); }
+
+ebus::ByteView Command::getId() const { return ebus::ByteView(id_, id_len_); }
+
+ebus::ByteView Command::getWid() const {
+  return ebus::ByteView(wid_, wid_len_);
 }
 
-bool Command::hasWriteCmd() const { return write_cmd_idx_ != 0; }
+bool Command::hasNnOverride() const { return has_nn_ovr_; }
 
-ebus::ByteView Command::getWriteCmd(
-    const CommandManager& command_manager) const {
-  if (write_cmd_idx_ == 0) return {};
-  return command_manager.getWriteCmd(write_cmd_idx_ - 1);
+ebus::ByteView Command::getNn() const {
+  return has_nn_ovr_ ? ebus::ByteView(&nn_ovr_, 1) : ebus::ByteView();
 }
 
-void Command::setWriteCmd(PollSequence&& cmd, CommandManager& command_manager) {
-  if (cmd.empty()) {
-    write_cmd_idx_ = 0;
+bool Command::hasWriteCmd() const { return wid_len_ != 0; }
+
+size_t Command::buildReadCmd(uint8_t* out, size_t cap) const {
+  if (id_len_ < 2) return 0;
+  const size_t need = 4 + (id_len_ - 2);  // ZZ PB SB NN + D tail
+  if (out == nullptr || cap < need) return 0;
+  out[0] = zz_;
+  out[1] = id_[0];
+  out[2] = id_[1];
+  out[3] = has_nn_ovr_ ? nn_ovr_ : static_cast<uint8_t>(id_len_ - 2);
+  if (id_len_ > 2) std::memcpy(out + 4, id_ + 2, id_len_ - 2);
+  return need;
+}
+
+ebus::Sequence Command::buildWriteCmd(ebus::ByteView value) const {
+  if (wid_len_ < 2) return {};
+  const size_t data_len = wid_len_ - 2 + value.size();
+  if (data_len > ebus::detail::SequenceLimits::max_data_bytes) return {};
+  uint8_t buf[4 + 6 + ebus::detail::SequenceLimits::max_data_bytes];
+  size_t len = 0;
+  buf[len++] = zz_;
+  buf[len++] = wid_[0];
+  buf[len++] = wid_[1];
+  // Legacy write_cmd NN wins over the derived one (byte-preserving).
+  buf[len++] = has_wnn_ ? wnn_ : static_cast<uint8_t>(data_len);
+  if (wid_len_ > 2) std::memcpy(buf + len, wid_ + 2, wid_len_ - 2);
+  len += wid_len_ - 2;
+  if (!value.empty()) std::memcpy(buf + len, value.data(), value.size());
+  len += value.size();
+  return ebus::makeSequence(ebus::ByteView(buf, len));
+}
+
+void Command::setIdBytes(ebus::ByteView bytes) {
+  if (bytes.size() < 2 || bytes.size() > 6) {
+    id_len_ = 0;
     return;
   }
-  // Try to find existing matching write_cmd
-  for (size_t i = 0; i < command_manager.getWriteCmdCount(); ++i) {
-    if (command_manager.getWriteCmd(i) == cmd) {
-      write_cmd_idx_ = static_cast<uint8_t>(i + 1);
-      return;
-    }
+  std::memcpy(id_, bytes.data(), bytes.size());
+  id_len_ = static_cast<uint8_t>(bytes.size());
+}
+
+void Command::setWidBytes(ebus::ByteView bytes) {
+  if (bytes.size() < 2 || bytes.size() > 6) {
+    wid_len_ = 0;
+    return;
   }
-  // Add new write_cmd if there's space
-  if (command_manager.addWriteCmd(std::move(cmd))) {
-    write_cmd_idx_ = static_cast<uint8_t>(command_manager.getWriteCmdCount());
+  std::memcpy(wid_, bytes.data(), bytes.size());
+  wid_len_ = static_cast<uint8_t>(bytes.size());
+}
+
+void Command::setLegacyReadCmd(ebus::ByteView bytes) {
+  // Wire hex: ZZ PB SB NN D... -> id = PB SB D...
+  if (bytes.size() < 4) return;
+  const size_t tail = bytes.size() - 4;
+  if (2 + tail > 6) {
+    logger.warn("Command: legacy read_cmd id longer than 6 bytes, ignored");
+    id_len_ = 0;
+    return;
+  }
+  zz_ = bytes[0];
+  id_[0] = bytes[1];
+  id_[1] = bytes[2];
+  if (tail > 0) std::memcpy(id_ + 2, bytes.data() + 4, tail);
+  id_len_ = static_cast<uint8_t>(2 + tail);
+  if (bytes[3] == tail) {
+    // NN equals len(id)-2: derivable at build time.
+    has_nn_ovr_ = false;
   } else {
-    write_cmd_idx_ = 0;  // No space
+    has_nn_ovr_ = true;
+    nn_ovr_ = bytes[3];
   }
+}
+
+void Command::setLegacyWriteCmd(ebus::ByteView bytes) {
+  // Wire hex: ZZ PB SB NN D... -> wid = PB SB D...; NN is kept as a
+  // candidate - the value length is unknowable from the hex alone, so
+  // build time decides between the stored and the derived NN.
+  if (bytes.size() < 4) return;
+  const size_t tail = bytes.size() - 4;
+  if (2 + tail > 6) {
+    logger.warn("Command: legacy write_cmd id longer than 6 bytes, ignored");
+    wid_len_ = 0;
+    return;
+  }
+  zz_ = bytes[0];
+  wid_[0] = bytes[1];
+  wid_[1] = bytes[2];
+  if (tail > 0) std::memcpy(wid_ + 2, bytes.data() + 4, tail);
+  wid_len_ = static_cast<uint8_t>(2 + tail);
+  has_wnn_ = true;
+  wnn_ = bytes[3];
 }
 
 bool Command::getActive() const { return interval_ > 0; }
@@ -249,7 +332,10 @@ bool Command::isFieldRaw(size_t i) const {
 }
 
 bool Command::matches(ebus::ByteView master_view) const {
-  return ebus::matches(master_view, read_cmd_, 1);
+  uint8_t buf[10];
+  size_t len = buildReadCmd(buf, sizeof(buf));
+  if (len == 0) return false;
+  return ebus::matches(master_view, ebus::ByteView(buf, len), 1);
 }
 
 void Command::writeFieldValue(ebus::detail::JsonWriter& writer,
@@ -469,8 +555,10 @@ size_t Command::writeLogMessage(char* buf, size_t len) const {
     }
   };
 
+  uint8_t read_buf[10];
+  const size_t read_len = buildReadCmd(read_buf, sizeof(read_buf));
   append_str(" '");
-  append_hex(getReadCmd());
+  append_hex(ebus::ByteView(read_buf, read_len));
   append_str("' [");
   append_str(getName());
   append_str("] ");
@@ -543,18 +631,35 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
     else if (key == "read_cmd") {
       uint8_t hex_buf[64];
       size_t hex_len = ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf));
-      command.read_cmd_.assign(ebus::ByteView(hex_buf, hex_len));
+      command.setLegacyReadCmd(ebus::ByteView(hex_buf, hex_len));
     } else if (key == "write_cmd") {
       uint8_t hex_buf[64];
       size_t hex_len = ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf));
-      PollSequence write_cmd;
-      write_cmd.assign(ebus::ByteView(hex_buf, hex_len));
-      command.setWriteCmd(std::move(write_cmd), command_manager);
+      command.setLegacyWriteCmd(ebus::ByteView(hex_buf, hex_len));
     } else if (key == "write_type")
       command.write_type_ = token == ebus::detail::JsonReader::Token::string
                                 ? parseWriteType(r.value())
                                 : command_types::WriteType::invalid;
-    else if (key == "interval")
+    else if (key == "zz") {
+      uint8_t hex_buf[8];
+      if (ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf)) == 1) {
+        command.zz_ = hex_buf[0];
+      }
+    } else if (key == "id") {
+      uint8_t hex_buf[8];
+      size_t hex_len = ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf));
+      command.setIdBytes(ebus::ByteView(hex_buf, hex_len));
+    } else if (key == "wid") {
+      uint8_t hex_buf[8];
+      size_t hex_len = ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf));
+      command.setWidBytes(ebus::ByteView(hex_buf, hex_len));
+    } else if (key == "nn") {
+      uint8_t hex_buf[8];
+      if (ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf)) == 1) {
+        command.has_nn_ovr_ = true;
+        command.nn_ovr_ = hex_buf[0];
+      }
+    } else if (key == "interval")
       command.interval_ = r.asNum<uint16_t>();
     else if (key == "master")
       command.master_ = r.asBool();
@@ -613,10 +718,39 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
   return command;
 }
 
-Command Command::fromTabular(ebus::detail::JsonReader& reader) {
+Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
+                             bool has_nn) {
   Command command;
   if (reader.next() != ebus::detail::JsonReader::Token::array_start)
     return command;
+
+  // Column layout mirrors the saveCommands header: legacy rows carry the
+  // wire hex (read_cmd/write_cmd), compact rows carry zz/id/[nn]/wid.
+  enum Col {
+    kKey,
+    kName,
+    kRead,
+    kWrite,
+    kZz,
+    kId,
+    kNn,
+    kWid,
+    kInterval,
+    kMaster,
+    kFields
+  };
+  static constexpr Col legacy_cols[] = {kKey,      kName,   kRead,  kWrite,
+                                        kInterval, kMaster, kFields};
+  static constexpr Col compact_cols_nn[] = {
+      kKey, kName, kZz, kId, kNn, kWid, kInterval, kMaster, kFields};
+  static constexpr Col compact_cols[] = {kKey, kName,     kZz,     kId,
+                                         kWid, kInterval, kMaster, kFields};
+  const Col* cols =
+      legacy ? legacy_cols : (has_nn ? compact_cols_nn : compact_cols);
+  const size_t col_count =
+      legacy ? (sizeof(legacy_cols) / sizeof(legacy_cols[0]))
+             : (has_nn ? sizeof(compact_cols_nn) / sizeof(compact_cols_nn[0])
+                       : sizeof(compact_cols) / sizeof(compact_cols[0]));
 
   int index = 0;
   while (true) {
@@ -626,36 +760,67 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader) {
         token == ebus::detail::JsonReader::Token::error)
       break;
 
-    switch (index) {
-      case 0:
+    const int col = (static_cast<size_t>(index) < col_count)
+                        ? static_cast<int>(cols[index])
+                        : -1;
+
+    switch (col) {
+      case kKey:
         command.key_id_ = StringPool::instance().intern(reader.value());
         break;
-      case 1:
+      case kName:
         command.name_id_ = StringPool::instance().intern(reader.value());
         break;
-      case 2: {
+      case kRead: {
         uint8_t hex_buf[64];
         size_t hex_len =
             ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf));
-        command.read_cmd_.assign(ebus::ByteView(hex_buf, hex_len));
+        command.setLegacyReadCmd(ebus::ByteView(hex_buf, hex_len));
         break;
       }  // NOLINT(bugprone-branch-ctl-initializer)
-      case 3: {
+      case kWrite: {
         uint8_t hex_buf[64];
         size_t hex_len =
             ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf));
-        PollSequence write_cmd;
-        write_cmd.assign(ebus::ByteView(hex_buf, hex_len));
-        command.setWriteCmd(std::move(write_cmd), command_manager);
+        command.setLegacyWriteCmd(ebus::ByteView(hex_buf, hex_len));
         break;
       }  // NOLINT(bugprone-branch-ctl-initializer)
-      case 4:
+      case kZz: {
+        uint8_t hex_buf[8];
+        if (ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf)) == 1) {
+          command.zz_ = hex_buf[0];
+        }
+        break;
+      }
+      case kId: {
+        uint8_t hex_buf[8];
+        size_t hex_len =
+            ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf));
+        command.setIdBytes(ebus::ByteView(hex_buf, hex_len));
+        break;
+      }
+      case kNn: {
+        uint8_t hex_buf[8];
+        if (ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf)) == 1) {
+          command.has_nn_ovr_ = true;
+          command.nn_ovr_ = hex_buf[0];
+        }
+        break;
+      }
+      case kWid: {
+        uint8_t hex_buf[8];
+        size_t hex_len =
+            ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf));
+        command.setWidBytes(ebus::ByteView(hex_buf, hex_len));
+        break;
+      }
+      case kInterval:
         command.interval_ = reader.asNum<uint16_t>();
         break;
-      case 5:
+      case kMaster:
         command.master_ = reader.asBool();
         break;
-      case 6: {
+      case kFields: {
         if (token == ebus::detail::JsonReader::Token::array_start) {
           while (true) {
             auto ft = reader.next();
@@ -737,10 +902,15 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader) {
           }
         }
       } break;
-      case 7:
-        command.write_type_ = token == ebus::detail::JsonReader::Token::string
-                                  ? parseWriteType(reader.value())
-                                  : command_types::WriteType::invalid;
+      case -1:
+        // Trailing write_type column: schema's last column, after fields.
+        if (index == static_cast<int>(col_count)) {
+          command.write_type_ = token == ebus::detail::JsonReader::Token::string
+                                    ? parseWriteType(reader.value())
+                                    : command_types::WriteType::invalid;
+        } else {
+          reader.skipComposite(token);
+        }
         break;
       default:
         reader.skipComposite(token);
@@ -767,7 +937,8 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
   }
 
   struct {
-    bool key = false, name = false, read_cmd = false, fields = false;
+    bool key = false, name = false, read = false, zz = false, id = false,
+         wid = false, fields = false;
   } met;
 
   const char* error = nullptr;
@@ -788,11 +959,31 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
                  "Invalid type for field: name");
         error = command_eval_error_buf;
       }
-    } else if (key == "read_cmd" || key == "write_cmd") {
-      met.read_cmd = true;
+    } else if (key == "read_cmd" || key == "write_cmd" || key == "zz" ||
+               key == "id" || key == "wid" || key == "nn") {
+      if (key == "read_cmd" || key == "id") met.read = true;
+      if (key == "zz") met.zz = true;
+      if (key == "id") met.id = true;
+      if (key == "wid") met.wid = true;
       if (token == ebus::detail::JsonReader::Token::string) {
         std::string_view hex = r.value();
-        if (hex.length() % 2 != 0) {
+        // Character counts: zz/nn = 1 byte; id/wid = 2..6 bytes;
+        // read_cmd/write_cmd = 4..8 wire bytes (ZZ PB SB NN + <=4 D);
+        // write-side fields may be empty (not writable).
+        size_t min_chars = 0, max_chars = 0;
+        if (key == "zz" || key == "nn") {
+          min_chars = max_chars = 2;
+        } else if (key == "id" || key == "wid") {
+          min_chars = 4;
+          max_chars = 12;
+        } else {
+          min_chars = 8;
+          max_chars = 16;
+        }
+        if (hex.empty() && (key == "write_cmd" || key == "wid")) {
+          // Optional write side left empty: command is read-only.
+        } else if (hex.length() < min_chars || hex.length() > max_chars ||
+                   hex.length() % 2 != 0) {
           snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
                    "Invalid hex string length: %.*s",
                    static_cast<int>(key.length()), key.data());
@@ -916,9 +1107,14 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
              "Missing required field: name");
     return command_eval_error_buf;
   }
-  if (!met.read_cmd) {
+  if (!met.read) {
     snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
-             "Missing required field: read_cmd");
+             "Missing required field: id or read_cmd");
+    return command_eval_error_buf;
+  }
+  if ((met.id || met.wid) && !met.zz) {
+    snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
+             "Missing required field: zz");
     return command_eval_error_buf;
   }
   if (!met.fields) {

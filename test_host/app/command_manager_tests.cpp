@@ -505,6 +505,79 @@ TEST_CASE("Unsupported tabular write types are not registered",
   const std::string row =
       R"(["invalid_type","Invalid write type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],true])";
   JsonReader reader(row);
-  command_manager.insertCommand(Command::fromTabular(reader));
+  command_manager.insertCommand(Command::fromTabular(reader, true));
   REQUIRE(command_manager.getCommandCount() == 0);
+}
+
+TEST_CASE("CommandManager saveCommands round-trips compact schema",
+          "[CommandManager]") {
+  command_manager.wipeCommands();
+
+  const char* json =
+      R"([{"key":"01","name":"Derived","read_cmd":"50b504020d00","write_cmd":"","interval":60,"master":false)"
+      R"(,"fields":[{"name":"value","profile":"uint8","position":1,"ha_profile":""}]},)"
+      R"({"key":"02","name":"Override","read_cmd":"feb5160301","write_cmd":"","interval":0,"master":true)"
+      R"(,"fields":[{"name":"value","profile":"uint8","position":1,"ha_profile":""}]},)"
+      R"({"key":"32","name":"Writer","read_cmd":"50b509030d3300","write_cmd":"50b509040e3300","interval":60,"master":false)"
+      R"(,"fields":[{"name":"value","profile":"data1c_celsius","position":1,"ha_profile":""}]}])";
+
+  const char* tmp_path = "/tmp/test_save_roundtrip.json";
+  FILE* f = std::fopen(tmp_path, "wb");
+  REQUIRE(f != nullptr);
+  std::fwrite(json, 1, std::strlen(json), f);
+  std::fclose(f);
+
+  REQUIRE(command_manager.loadCommandsFrom(tmp_path) >= 0);
+  REQUIRE(command_manager.getCommandCount() == 3);
+
+  // fetchCommands emits the compact object schema
+  std::string fetched;
+  command_manager.fetchCommands(
+      [&fetched](std::string_view s) { fetched += s; });
+  REQUIRE(fetched.find("\"read_cmd\"") == std::string::npos);
+  REQUIRE(fetched.find("\"write_cmd\"") == std::string::npos);
+  REQUIRE(fetched.find("\"zz\"") != std::string::npos);
+  REQUIRE(fetched.find("\"nn\"") != std::string::npos);  // key 02 override
+  size_t wid_count = 0;
+  for (size_t pos = fetched.find("\"wid\""); pos != std::string::npos;
+       pos = fetched.find("\"wid\"", pos + 1))
+    wid_count++;
+  REQUIRE(wid_count == 1);  // only key 32 is writable
+
+  // Persist compact and reload through the header-based schema detector.
+  // removeAll() clears memory only; wipeCommands() also deletes the file.
+  REQUIRE(command_manager.saveCommands() >= 0);
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() >= 0);
+  REQUIRE(command_manager.getCommandCount() == 3);
+
+  uint8_t buf[10];
+  Command* derived = command_manager.findCommand("01");
+  REQUIRE(derived != nullptr);
+  REQUIRE(derived->hasNnOverride() == false);
+  size_t len = derived->buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 6);
+  const uint8_t expect01[] = {0x50, 0xb5, 0x04, 0x02, 0x0d, 0x00};
+  for (size_t i = 0; i < sizeof(expect01); i++) REQUIRE(buf[i] == expect01[i]);
+
+  Command* ovr = command_manager.findCommand("02");
+  REQUIRE(ovr != nullptr);
+  REQUIRE(ovr->hasNnOverride() == true);
+  len = ovr->buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 5);
+  const uint8_t expect02[] = {0xfe, 0xb5, 0x16, 0x03, 0x01};
+  for (size_t i = 0; i < sizeof(expect02); i++) REQUIRE(buf[i] == expect02[i]);
+
+  Command* writer = command_manager.findCommand("32");
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->hasWriteCmd() == true);
+  REQUIRE(writer->getWid().size() == 5);
+  uint8_t vb[] = {0xaa};
+  ebus::Sequence seq = writer->buildWriteCmd(ebus::ByteView(vb, 1));
+  REQUIRE(seq.size() == 8);
+  const uint8_t expect32[] = {0x50, 0xb5, 0x09, 0x04, 0x0e, 0x33, 0x00, 0xaa};
+  for (size_t i = 0; i < sizeof(expect32); i++) REQUIRE(seq[i] == expect32[i]);
+
+  command_manager.wipeCommands();
+  std::remove(tmp_path);
 }

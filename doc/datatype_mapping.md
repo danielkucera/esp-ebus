@@ -54,11 +54,19 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | FLT / FLOAT | FLOAT4 | _templates.tsp | 32-bit IEEE 754 float |
 | STR | CHAR1-8 | _templates.tsp | String data, represented by a fixed-size CHAR type |
 | IGN | (skip) | _templates.tsp | Ignore field |
-| UIN | UINT16R | vaillant/_templates.tsp | Big-endian unsigned int (Vaillant) |
-| SIN | INT16R | vaillant/_templates.tsp | Big-endian signed int |
-| UIR | UINT16 | vaillant/_templates.tsp | Little-endian unsigned int (reversed of UIN) |
-| ULG | UINT32R | vaillant/_templates.tsp | Big-endian unsigned long |
+| UIN | UINT16 | vaillant/_templates.tsp | Little-endian unsigned int |
+| SIN | INT16 | vaillant/_templates.tsp | Little-endian signed int |
+| UIR | UINT16R | vaillant/_templates.tsp | Big-endian unsigned int (reversed of UIN) |
+| ULG | UINT32 | vaillant/_templates.tsp | Little-endian unsigned long |
+| EXP / EXR | FLOAT4 / FLOAT4R | vaillant/_templates.tsp | IEEE 754 binary32 (EXR reversed byte order) |
 | BCD | BCD | _templates.tsp | Single-byte BCD |
+
+> Endianness verified against the vendored ebusd 26.1 sources
+> ([`doc/private/ebusd`](../private/ebusd), `src/lib/ebus/datatype.cpp`):
+> `UIR`, `SIR`, `ULR`, `EXR` carry the `REV` flag — "reverted binary
+> representation (most significant byte first)" — while `UIN`, `SIN`,
+> `ULG`, `EXP` do not. `ebus-typespec/lib/types.tsp` agrees
+> (`@Internal.reverse` on the `UIR`/`ULR`/`EXR` scalars).
 
 #### No direct native DataType equivalent
 
@@ -66,10 +74,9 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 |---|---|---|
 | BCD3 / BCD4 | 3- or 4-byte BCD | Requires explicit decoding; a profile alone does not provide multi-byte BCD decoding |
 | PIN | BCD password representation | Requires protocol-specific decoding |
-| HCL | Hour counter (BCD) | Requires explicit BCD conversion |
 | BTI / BDA / BDY | Binary time / date / weekday | Requires protocol-specific field decoding |
 | HDA3 / TTM / VTI / VTM | Holiday date / timer encodings | Requires protocol-specific field decoding |
-| EXP / VA | Scaled values with divisor / offset semantics | Use a profile for supported underlying types and scaling; implement any additional offset or encoding behavior explicitly |
+| HCL / VA | Not defined in vendored ebusd 26.1 (`datatype.cpp`) or any vendored TypeSpec | Stale entries — confirm origin before mapping |
 | BI0-BI2 | Bit extraction | Requires explicit bit extraction; profiles do not define bit fields |
 
 ---
