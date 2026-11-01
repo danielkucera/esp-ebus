@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Device Commands
 
 `<device-ip>` is a placeholder for the adapter address (e.g. `192.168.1.9`).

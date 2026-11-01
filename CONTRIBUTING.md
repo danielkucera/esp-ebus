@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Contributing to esp-ebus
 
 Thank you for your interest in contributing to the esp-ebus project! To maintain high code quality and architectural consistency, please follow these guidelines for all new code.

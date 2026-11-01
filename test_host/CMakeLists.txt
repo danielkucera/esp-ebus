@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.16.0)
 project(esp_ebus_app_tests LANGUAGES CXX)
 

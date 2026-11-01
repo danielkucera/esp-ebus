@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "system/device_identity.hpp"
 
 #include <esp_mac.h>

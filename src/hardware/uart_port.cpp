@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "hardware/uart_port.hpp"
 
 #include <esp_log.h>
