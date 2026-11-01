@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 // Mock Mqtt for host testing - no ESP-IDF dependency.

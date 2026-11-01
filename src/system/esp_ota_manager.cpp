@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "system/esp_ota_manager.hpp"
 
 #include <esp_err.h>

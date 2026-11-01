@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Host stub for App: there is no live application object in host tests,
 // so ConfigManager HTTP handlers fall back to the legacy direct-NVS path
 // (see ConfigManager::handleSet/handleReset).

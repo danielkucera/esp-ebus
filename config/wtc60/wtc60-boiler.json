@@ -1,0 +1,6 @@
+[
+{"key":"wtc_dhw","name":"Weishaupt/Hot_water_cylinder_temperature","read_cmd":"fe500a0d","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"data1c_celsius","position":8,"ha_profile":"sensor_temperature"}]},
+{"key":"wtc_flow","name":"Weishaupt/Boiler/Flow_temperature","read_cmd":"085003019e","write_cmd":"","interval":10,"master":false,"fields":[{"name":"value","profile":"uint16_celsius","position":2,"ha_profile":"sensor_temperature"}]},
+{"key":"wtc_flue","name":"Weishaupt/Boiler/Flue_gas_temperature","read_cmd":"085003019f","write_cmd":"","interval":10,"master":false,"fields":[{"name":"value","profile":"uint16_celsius","position":2,"ha_profile":"sensor_temperature"}]},
+{"key":"wtc_outside","name":"Weishaupt/Outside_temperature","read_cmd":"fe500a0d","write_cmd":"","interval":0,"master":true,"fields":[{"name":"value","profile":"int8_celsius","position":10,"ha_profile":"sensor_temperature"}]}
+]

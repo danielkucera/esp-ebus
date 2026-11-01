@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #define SOC_ADC_SAMPLE_FREQ_THRES_LOW 600

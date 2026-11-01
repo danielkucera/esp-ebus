@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #define private public
 #include <catch2/catch_test_macros.hpp>
 #include <ebus/detail/json_reader.hpp>
@@ -69,4 +70,14 @@ TEST_CASE("LogsApi tap endpoint forwards since and streams tap JSON",
   REQUIRE(ebus::detail::JsonReader::validate(body));
   REQUIRE(body == R"({"tap":[],"dropped":0,"capacity":0})");
   REQUIRE(req.chunks.back().empty());
+}
+
+TEST_CASE("LogsApi returns a failed send to the server without retrying", "[logs_api]") {
+  Logger logger_inst;
+  LogsApi api(logger_inst);
+  httpd_req_t req{};
+  req.chunk_fail_after = 0;
+  REQUIRE(LogsApi::handleLogs(&req) == ESP_FAIL);
+  REQUIRE(req.chunk_send_calls == 1);
+  REQUIRE(req.chunks.empty());
 }

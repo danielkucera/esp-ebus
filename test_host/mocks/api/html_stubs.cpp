@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 extern "C" const char values_html_start[] asm("_binary_values_html_start") =
     "<html><body>values</body></html>";
 extern "C" const char adc_html_start[] asm("_binary_adc_html_start") =

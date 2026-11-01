@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 # This file was automatically generated for projects
 # without default 'CMakeLists.txt' file.
 

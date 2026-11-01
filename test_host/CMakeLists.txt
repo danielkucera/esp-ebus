@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.16.0)
 project(esp_ebus_app_tests LANGUAGES CXX)
 
@@ -183,6 +184,7 @@ target_link_libraries(network_tests PRIVATE
 
 add_executable(system_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/system/string_pool_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/system/monitor_schedule_tests.cpp
 )
 target_link_libraries(system_tests PRIVATE
     system_test_support
@@ -269,7 +271,9 @@ find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE)
     add_test(NAME config_page_defaults
         COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/web/config_page_tests.cjs)
-    set_tests_properties(config_page_defaults PROPERTIES ENVIRONMENT "ELECTRON_RUN_AS_NODE=1")
+    add_test(NAME logs_page_retention
+        COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/web/logs_page_tests.cjs)
+    set_tests_properties(config_page_defaults logs_page_retention PROPERTIES ENVIRONMENT "ELECTRON_RUN_AS_NODE=1")
 endif()
 include(CTest)
 # Per-case CTest entries: timeouts apply per case,
