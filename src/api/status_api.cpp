@@ -46,10 +46,11 @@ esp_err_t StatusApi::handleStatusPage(httpd_req_t* req) {
 #if defined(EBUS_INTERNAL)
 
 esp_err_t StatusApi::handleHealth(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+    response.write(chunk);
   });
 
   uint32_t total_messages = 0;
@@ -92,8 +93,7 @@ esp_err_t StatusApi::handleHealth(httpd_req_t* req) {
       writer.writeField("print_drops", logger.getPrintDropCount());
     }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 #endif

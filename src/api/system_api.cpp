@@ -46,10 +46,11 @@ bool SystemApi::registerHandlers(httpd_handle_t server) {
 }
 
 esp_err_t SystemApi::handleSystem(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+    response.write(chunk);
   });
   {
     auto scope = writer.objectScope();
@@ -80,17 +81,17 @@ esp_err_t SystemApi::handleSystem(httpd_req_t* req) {
       }
     }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 // Current values + hourly trend samples (leak/fragmentation instrument).
 // Object shape; the page renders current plus the trend table.
 esp_err_t SystemApi::handleHeap(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+    response.write(chunk);
   });
   SystemMonitor::HeapSample trend[SystemMonitor::heap_trend_capacity];
   size_t n = DeviceStatus::monitor().fetchHeapTrend(
@@ -116,17 +117,17 @@ esp_err_t SystemApi::handleHeap(httpd_req_t* req) {
       }
     }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 // Per-task stacks + CPU shares (who starves the bus thread?).
 // Object of two arrays; the page renders one table each.
 esp_err_t SystemApi::handleTasks(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
+  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
+    response.write(chunk);
   });
   {
     auto scope = writer.objectScope();
@@ -260,8 +261,7 @@ esp_err_t SystemApi::handleTasks(httpd_req_t* req) {
       }
     }
   }
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  return response.finish();
 }
 
 #endif
