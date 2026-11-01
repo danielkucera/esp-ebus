@@ -544,9 +544,10 @@ TEST_CASE("CommandManager saveCommands round-trips compact schema",
     wid_count++;
   REQUIRE(wid_count == 1);  // only key 32 is writable
 
-  // Persist compact and reload through the header-based schema detector
+  // Persist compact and reload through the header-based schema detector.
+  // removeAll() clears memory only; wipeCommands() also deletes the file.
   REQUIRE(command_manager.saveCommands() >= 0);
-  command_manager.wipeCommands();
+  command_manager.removeAll();
   REQUIRE(command_manager.loadCommands() >= 0);
   REQUIRE(command_manager.getCommandCount() == 3);
 
