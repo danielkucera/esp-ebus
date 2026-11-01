@@ -36,9 +36,8 @@ esp_err_t DevicesApi::handleDevices(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  getEbusController().fetchDevices([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  getEbusController().fetchDevices(
+      [&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 

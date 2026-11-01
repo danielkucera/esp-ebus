@@ -30,7 +30,8 @@ TEST_CASE("StringPool interns and looks up strings", "[string_pool]") {
   REQUIRE(pool.lookup(0).empty());
 }
 
-TEST_CASE("StringPool keeps existing IDs valid when its index capacity is full", "[string_pool]") {
+TEST_CASE("StringPool keeps existing IDs valid when its index capacity is full",
+          "[string_pool]") {
   StringPool pool;
   for (unsigned i = 0; i < 255; ++i) {
     REQUIRE(pool.intern(std::to_string(i)) == i + 1);
@@ -43,16 +44,21 @@ TEST_CASE("StringPool keeps existing IDs valid when its index capacity is full",
   }
 }
 
-TEST_CASE("StringPool rejects oversized names and preserves entries when bytes run out", "[string_pool]") {
+TEST_CASE(
+    "StringPool rejects oversized names and preserves entries when bytes run "
+    "out",
+    "[string_pool]") {
   StringPool pool;
   REQUIRE(pool.intern(std::string(256, 'x')) == 0);
-  for (int i = 0; i < 8; ++i) REQUIRE(pool.intern(std::string(255, 'a' + i)) != 0);
+  for (int i = 0; i < 8; ++i)
+    REQUIRE(pool.intern(std::string(255, 'a' + i)) != 0);
   REQUIRE(pool.intern("no room") == 0);
   REQUIRE(pool.intern(std::string(255, 'a')) == 1);
   REQUIRE(pool.lookup(1) == std::string(255, 'a'));
 }
 
-TEST_CASE("StringPool concurrently interns shared names without duplicate IDs", "[string_pool]") {
+TEST_CASE("StringPool concurrently interns shared names without duplicate IDs",
+          "[string_pool]") {
   StringPool pool;
   std::vector<std::thread> workers;
   for (int i = 0; i < 8; ++i) {

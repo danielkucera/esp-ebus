@@ -11,9 +11,9 @@
 
 #include <cerrno>
 #include <cstdio>
-#include <memory>
 #include <ebus/detail/json_reader.hpp>
 #include <ebus/detail/json_writer.hpp>
+#include <memory>
 #include <string>
 
 #ifdef INADDR_NONE
@@ -233,9 +233,8 @@ esp_err_t UpgradeManager::handleStatus(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  DeviceStatus::fetchStatus([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  DeviceStatus::fetchStatus(
+      [&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 
@@ -445,7 +444,8 @@ esp_err_t UpgradeManager::handleHttpUpgrade(httpd_req_t* req) {
     http_upgrade_running_ = false;
     delete task_ctx;
     HttpUtils::sendErrorResponse(req, "500 Internal Server Error",
-                                 "upgrade_http", "Failed to start upgrade task");
+                                 "upgrade_http",
+                                 "Failed to start upgrade task");
     return ESP_OK;
   }
 

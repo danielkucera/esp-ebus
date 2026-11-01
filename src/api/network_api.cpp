@@ -35,9 +35,8 @@ esp_err_t NetworkApi::handleNetwork(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  ebus::detail::JsonWriter writer(
+      [&response](std::string_view chunk) { response.write(chunk); });
   {
     auto scope = writer.objectScope();
     {
@@ -98,9 +97,8 @@ esp_err_t NetworkApi::handleWifiScan(httpd_req_t* req) {
 
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  ebus::detail::JsonWriter writer(
+      [&response](std::string_view chunk) { response.write(chunk); });
 
   {
     auto array_scope = writer.arrayScope();

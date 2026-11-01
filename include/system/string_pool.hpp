@@ -24,7 +24,8 @@ class StringPool {
     }
 
     if (count_ >= max_strings_ ||
-        buffer_offset_ + str.size() + 1 > buffer_size_) return 0;
+        buffer_offset_ + str.size() + 1 > buffer_size_)
+      return 0;
 
     std::memcpy(buffer_ + buffer_offset_, str.data(), str.size());
     buffer_[buffer_offset_ + str.size()] = '\0';

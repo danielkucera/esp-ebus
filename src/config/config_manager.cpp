@@ -288,9 +288,8 @@ esp_err_t handleConfigDrift(httpd_req_t* req) {
   HttpUtils::applyCustomHeaders(req);
   HttpUtils::ChunkedResponse response(req);
   {
-    ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
-      response.write(chunk);
-    });
+    ebus::detail::JsonWriter writer(
+        [&response](std::string_view chunk) { response.write(chunk); });
     auto root = writer.objectScope();
     writer.writeField("staged", !keys.empty());
     writer.appendKey("keys");
@@ -442,9 +441,7 @@ esp_err_t ConfigManager::handleGet(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  fetchConfig([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  fetchConfig([&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 

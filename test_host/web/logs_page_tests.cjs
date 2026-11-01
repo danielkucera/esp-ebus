@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const html = fs.readFileSync(path.join(__dirname, '../../static/logs.html'), 'utf8');
 const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
 const elements = new Map();
-const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'].map(value => ({ value, checked: true, addEventListener() {} }));
+const levels = ['DEBUG', 'INFO', 'WARN', 'ERROR'].map(value => ({ value, checked: true, addEventListener() { } }));
 let fullTableRenders = 0;
 const rows = [];
 const table = {
@@ -32,10 +32,10 @@ function makeRow(html) {
 elements.set('logsBody', table);
 const context = vm.createContext({
     console,
-    handleHome() {},
+    handleHome() { },
     document: {
         getElementById(id) {
-            if (!elements.has(id)) elements.set(id, { checked: false, textContent: '', addEventListener() {} });
+            if (!elements.has(id)) elements.set(id, { checked: false, textContent: '', addEventListener() { } });
             return elements.get(id);
         },
         querySelectorAll(selector) {
@@ -44,7 +44,7 @@ const context = vm.createContext({
     },
     fetch: async () => ({ ok: true, json: async () => ({ logs: [] }) }),
     setTimeout: () => 0,
-    clearTimeout() {},
+    clearTimeout() { },
 });
 vm.runInContext(scripts.at(-1)[1], context);
 const run = code => vm.runInContext(code, context);

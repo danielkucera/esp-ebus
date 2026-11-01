@@ -87,9 +87,8 @@ esp_err_t CommandsApi::handleCommands(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->command_manager_.fetchCommands([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  instance_->command_manager_.fetchCommands(
+      [&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 
@@ -194,12 +193,13 @@ esp_err_t CommandsApi::handleCommandsUpload(httpd_req_t* req) {
     return ESP_OK;
   }
 
-  const char* tmp_path = "/littlefs/commands.json.tmp";
 #ifdef EBUS_COMMANDS_TMP_FILE_PATH
   char host_tmp_path[256];
   std::snprintf(host_tmp_path, sizeof(host_tmp_path), "%s.%ld",
                 EBUS_COMMANDS_TMP_FILE_PATH, static_cast<long>(getpid()));
-  tmp_path = host_tmp_path;
+  const char* tmp_path = host_tmp_path;
+#else
+  const char* tmp_path = "/littlefs/commands.json.tmp";
 #endif
 
   FILE* file = std::fopen(tmp_path, "wb");

@@ -72,7 +72,8 @@ TEST_CASE("LogsApi tap endpoint forwards since and streams tap JSON",
   REQUIRE(req.chunks.back().empty());
 }
 
-TEST_CASE("LogsApi returns a failed send to the server without retrying", "[logs_api]") {
+TEST_CASE("LogsApi returns a failed send to the server without retrying",
+          "[logs_api]") {
   Logger logger_inst;
   LogsApi api(logger_inst);
   httpd_req_t req{};

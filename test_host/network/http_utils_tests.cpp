@@ -283,7 +283,8 @@ TEST_CASE("registerRoute reports HTTP registration failures", "[http_utils]") {
   HttpUtilsTestState::route_result = ESP_OK;
 }
 
-TEST_CASE("Chunked responses combine fragments without changing payload bytes", "[http_utils]") {
+TEST_CASE("Chunked responses combine fragments without changing payload bytes",
+          "[http_utils]") {
   httpd_req_t req{};
   HttpUtils::ChunkedResponse response(&req);
   std::string payload(3500, 'x');
@@ -295,14 +296,15 @@ TEST_CASE("Chunked responses combine fragments without changing payload bytes", 
   std::string received;
   for (const auto& chunk : req.chunks) received += chunk;
   REQUIRE(received == payload);
-  REQUIRE(req.chunks.size() == 5); // Four data chunks and one terminator.
+  REQUIRE(req.chunks.size() == 5);  // Four data chunks and one terminator.
   REQUIRE(req.chunk_send_calls == 5);
   REQUIRE(req.chunks.back().empty());
   REQUIRE(response.finish() == ESP_OK);
   REQUIRE(req.chunks.size() == 5);
 }
 
-TEST_CASE("Chunked responses never retry a failed socket write", "[http_utils]") {
+TEST_CASE("Chunked responses never retry a failed socket write",
+          "[http_utils]") {
   for (int successful_sends : {0, 1, 2}) {
     httpd_req_t req{};
     req.chunk_fail_after = successful_sends;
@@ -317,7 +319,9 @@ TEST_CASE("Chunked responses never retry a failed socket write", "[http_utils]")
   }
 }
 
-TEST_CASE("Chunked responses propagate failures during final flush or termination", "[http_utils]") {
+TEST_CASE(
+    "Chunked responses propagate failures during final flush or termination",
+    "[http_utils]") {
   for (int successful_sends : {0, 1}) {
     httpd_req_t req{};
     req.chunk_fail_after = successful_sends;
