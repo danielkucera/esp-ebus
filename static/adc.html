@@ -36,17 +36,15 @@
     <div class="controls">
         <button id="btnHome">Home</button>
         <button id="btnDisable">Disable ADC</button>
-        <span style="margin-left:8px">Method: raw</span>
-        <span style="margin-left:8px">Sample</span>
-        <label for="sampleRate" style="font-size:0.9rem">rate</label>
-        <input id="sampleRate" type="number" value="30000" min="600" max="200000" style="width:90px">
-        <label for="sampleCount" style="font-size:0.9rem">samples</label>
-        <input id="sampleCount" type="number" value="2400" min="1" style="width:90px" title="Per-channel samples">
+        <span style="margin-left:8px">Sample rate</span>
+        <input id="sampleRate" type="number" value="9600" min="600" max="200000" style="width:90px">
+        <span style="margin-left:8px">Sample count</span>
+        <input id="sampleCount" type="number" value="30000" min="1" style="width:90px" title="Per-channel samples">
         <span style="margin-left:8px">Channels</span>
-        <label><input type="checkbox" class="channelSelect" value="0" checked>0</label>
-        <label><input type="checkbox" class="channelSelect" value="1" checked>1</label>
+        <label><input type="checkbox" class="channelSelect" value="0" checked>0 - PWM threshold</label>
+        <label><input type="checkbox" class="channelSelect" value="1" checked>1 - eBus voltage {1:7.47)</label>
         <label><input type="checkbox" class="channelSelect" value="2">2</label>
-        <label><input type="checkbox" class="channelSelect" value="3">3</label>
+        <label><input type="checkbox" class="channelSelect" value="3" checked>3 - eBus TTL value</label>
         <label><input type="checkbox" class="channelSelect" value="4">4</label>
         <button id="btnRefresh">Run</button>
         <button id="btnSaveJson">Save JSON</button>
