@@ -20,6 +20,12 @@
             height: 320px;
             display: block;
             background: #fcfcfc;
+            cursor: grab;
+            touch-action: none;
+        }
+
+        #adcChart.is-dragging {
+            cursor: grabbing;
         }
 
         .adc-metrics {
@@ -28,30 +34,101 @@
             font-size: 13px;
             color: #333;
         }
+        .adc-controls {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .adc-settings {
+            display: flex;
+            align-items: flex-start;
+            gap: 24px;
+        }
+
+        .adc-settings-values {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .adc-control-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .adc-setting-row {
+            display: grid;
+            grid-template-columns: 100px 90px;
+            align-items: center;
+        }
+
+        .adc-channels {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .adc-channel-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 4px 12px;
+            max-width: 100%;
+        }
+
+        .adc-channel-grid label {
+            align-items: flex-start;
+        }
+
+        .adc-channel-grid input {
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 520px) {
+            .adc-settings {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+
     </style>
 </head>
 
 <body>
     <h1>ADC</h1>
-    <div class="controls">
-        <button id="btnHome">Home</button>
-        <button id="btnDisable">Disable ADC</button>
-        <span style="margin-left:8px">Method: raw</span>
-        <span style="margin-left:8px">Sample</span>
-        <label for="sampleRate" style="font-size:0.9rem">rate</label>
-        <input id="sampleRate" type="number" value="30000" min="600" max="200000" style="width:90px">
-        <label for="sampleCount" style="font-size:0.9rem">samples</label>
-        <input id="sampleCount" type="number" value="2400" min="1" style="width:90px" title="Per-channel samples">
-        <span style="margin-left:8px">Channels</span>
-        <label><input type="checkbox" class="channelSelect" value="0" checked>0</label>
-        <label><input type="checkbox" class="channelSelect" value="1" checked>1</label>
-        <label><input type="checkbox" class="channelSelect" value="2">2</label>
-        <label><input type="checkbox" class="channelSelect" value="3">3</label>
-        <label><input type="checkbox" class="channelSelect" value="4">4</label>
-        <button id="btnRefresh">Run</button>
-        <button id="btnSaveJson">Save JSON</button>
-        <button id="btnResetZoom">Reset Zoom</button>
-        <span id="status">...</span>
+    <div class="controls adc-controls">
+        <div class="adc-control-row">
+            <button id="btnHome">Home</button>
+            <button id="btnDisable">Disable ADC</button>
+            <button id="btnRefresh">Run</button>
+            <button id="btnSaveJson">Save JSON</button>
+            <button id="btnZoomIn">Zoom +</button>
+            <button id="btnZoomOut">Zoom -</button>
+            <button id="btnResetZoom">Reset Zoom</button>
+            <span id="status">...</span>
+        </div>
+        <div class="adc-settings">
+            <div class="adc-settings-values">
+                <div>Settings</div>
+                <div class="adc-setting-row">
+                    <label for="sampleRate">Sample rate</label>
+                    <input id="sampleRate" type="number" value="9600" min="600" max="200000" style="width:90px">
+                </div>
+                <div class="adc-setting-row">
+                    <label for="sampleCount">Sample count</label>
+                    <input id="sampleCount" type="number" value="30000" min="1" style="width:90px" title="Per-channel samples">
+                </div>
+            </div>
+            <div class="adc-channels">
+                <div>Channels</div>
+                <div class="adc-channel-grid">
+                    <label><input type="checkbox" class="channelSelect" value="0" checked>0 - PWM threshold</label>
+                    <label><input type="checkbox" class="channelSelect" value="1" checked>1 - eBus voltage (1:7.47)</label>
+                    <label><input type="checkbox" class="channelSelect" value="2">2</label>
+                    <label><input type="checkbox" class="channelSelect" value="3" checked>3 - eBus TTL value</label>
+                    <label><input type="checkbox" class="channelSelect" value="4">4</label>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="chart-wrap">
@@ -77,6 +154,7 @@
         let liveSource = null;
         let zoomX = 1;
         let viewStartIndex = null; // null => auto-stick to latest data
+        let dragStart = null;
         let lastPointsByChannel = {};
         let hoverInfo = null;
         let lastRawJson = '';
@@ -113,6 +191,27 @@
             const maxStart = total - visibleCount;
             if (viewStartIndex === null) return maxStart;
             return clamp(viewStartIndex, 0, maxStart);
+        }
+
+        function zoomAt(anchorRatio, factor) {
+            const base = getPrimarySeries();
+            if (!base || base.length < 2) return;
+
+            const ratio = clamp(anchorRatio, 0, 1);
+            const oldVisible = getVisibleCount(base.length);
+            const oldStart = getViewStart(base.length, oldVisible);
+            const anchorIndex = oldStart + ratio * Math.max(0, oldVisible - 1);
+
+            zoomX = clamp(zoomX * factor, 1, 100);
+            const newVisible = getVisibleCount(base.length);
+            const maxStart = Math.max(0, base.length - newVisible);
+            viewStartIndex = clamp(
+                Math.round(anchorIndex - ratio * Math.max(0, newVisible - 1)),
+                0,
+                maxStart
+            );
+            hoverInfo = null;
+            drawChart();
         }
 
         function rawToMilliVolts(raw) {
@@ -708,9 +807,12 @@
         document.getElementById('btnDisable').addEventListener('click', disableAdc);
         document.getElementById('btnRefresh').addEventListener('click', handleAdc);
         document.getElementById('btnSaveJson').addEventListener('click', saveJson);
+        document.getElementById('btnZoomIn').addEventListener('click', () => zoomAt(0.5, 1.2));
+        document.getElementById('btnZoomOut').addEventListener('click', () => zoomAt(0.5, 1 / 1.2));
         document.getElementById('btnResetZoom').addEventListener('click', () => {
             zoomX = 1;
             viewStartIndex = null;
+            hoverInfo = null;
             drawChart();
         });
         document.getElementById('sampleRate').addEventListener('change', updateSampleSettings);
@@ -727,24 +829,63 @@
             e.preventDefault();
 
             const rect = canvas.getBoundingClientRect();
-            const relX = clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-
-            const oldVisible = getVisibleCount(base.length);
-            const oldStart = getViewStart(base.length, oldVisible);
-            const anchorIndex = oldStart + relX * oldVisible;
-
-            if (e.deltaY < 0) zoomX *= 1.2;
-            else zoomX /= 1.2;
-            zoomX = clamp(zoomX, 1, 100);
-
-            const newVisible = getVisibleCount(base.length);
-            const maxStart = Math.max(0, base.length - newVisible);
-            viewStartIndex = clamp(Math.round(anchorIndex - relX * newVisible), 0, maxStart);
-
-            drawChart();
+            const chartLeft = 96;
+            const chartWidth = Math.max(1, rect.width - chartLeft - 8);
+            const relX = (e.clientX - rect.left - chartLeft) / chartWidth;
+            zoomAt(relX, e.deltaY < 0 ? 1.2 : 1 / 1.2);
         }, { passive: false });
 
+        canvas.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            const base = getPrimarySeries();
+            if (!base || base.length < 2) return;
+            const visibleCount = getVisibleCount(base.length);
+            if (base.length <= visibleCount) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            if (x < 96 || x > rect.width - 8) return;
+
+            dragStart = {
+                clientX: e.clientX,
+                viewStart: getViewStart(base.length, visibleCount)
+            };
+            hoverInfo = null;
+            canvas.classList.add('is-dragging');
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+        });
+
+        canvas.addEventListener('pointermove', (e) => {
+            if (!dragStart) return;
+            const base = getPrimarySeries();
+            const visibleCount = getVisibleCount(base.length);
+            const plotWidth = Math.max(1, canvas.clientWidth - 96 - 8);
+            const deltaSamples = (dragStart.clientX - e.clientX) *
+                Math.max(0, visibleCount - 1) / plotWidth;
+            viewStartIndex = clamp(
+                Math.round(dragStart.viewStart + deltaSamples),
+                0,
+                Math.max(0, base.length - visibleCount)
+            );
+            drawChart();
+            e.preventDefault();
+        });
+
+        function endChartDrag(e) {
+            if (!dragStart) return;
+            dragStart = null;
+            canvas.classList.remove('is-dragging');
+            if (canvas.hasPointerCapture(e.pointerId)) {
+                canvas.releasePointerCapture(e.pointerId);
+            }
+        }
+
+        canvas.addEventListener('pointerup', endChartDrag);
+        canvas.addEventListener('pointercancel', endChartDrag);
+
         canvas.addEventListener('mousemove', (e) => {
+            if (dragStart) return;
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
