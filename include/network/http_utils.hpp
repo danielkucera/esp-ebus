@@ -3,9 +3,9 @@
 
 #include <esp_http_server.h>
 
-#include <ebus/detail/json_reader.hpp>
 #include <algorithm>
 #include <cstring>
+#include <ebus/detail/json_reader.hpp>
 #include <string>
 #include <string_view>
 
@@ -50,7 +50,7 @@ class ChunkedResponse {
   }
 
   httpd_req_t* req_;
-  char buffer_[1024];
+  char buffer_[1024] = {};
   size_t size_ = 0;
   esp_err_t result_ = ESP_OK;
   bool finished_ = false;

@@ -41,9 +41,8 @@ esp_err_t CronApi::handleCron(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->cron_.fetchRules([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  instance_->cron_.fetchRules(
+      [&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 

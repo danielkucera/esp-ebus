@@ -134,9 +134,7 @@ esp_err_t AdcApi::handleAdcRaw(httpd_req_t* req) {
   httpd_resp_set_hdr(req, "X-ADC-Controller-Sample-Rate", tmp6);
 
   if (!instance_->adc_.streamRaw(
-          [&response](std::string_view chunk) {
-            response.write(chunk);
-          },
+          [&response](std::string_view chunk) { response.write(chunk); },
           sample_rate, samples_per_channel, channel_mask))
     return ESP_FAIL;
   return response.finish();
@@ -147,9 +145,8 @@ esp_err_t AdcApi::handleAdcState(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   {
-    ebus::detail::JsonWriter writer([&response](std::string_view chunk) {
-      response.write(chunk);
-    });
+    ebus::detail::JsonWriter writer(
+        [&response](std::string_view chunk) { response.write(chunk); });
     auto scope = writer.objectScope();
     writer.writeField("running", instance_->adc_.isRunning());
   }
