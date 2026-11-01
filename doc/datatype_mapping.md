@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # eBUS DataType and App Data Profile Mapping
 
 This document describes how eBUS wire types map to the library's native

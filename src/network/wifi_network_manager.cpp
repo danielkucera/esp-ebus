@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "network/wifi_network_manager.hpp"
 
 #include <arpa/inet.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "network/http_utils.hpp"
 
 #include <esp_err.h>

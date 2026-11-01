@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "hardware/adc.hpp"
 
 #include <esp_adc/adc_continuous.h>

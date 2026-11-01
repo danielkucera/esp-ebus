@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #define private public
 #include <catch2/catch_test_macros.hpp>
 #include <ebus/detail/json_reader.hpp>

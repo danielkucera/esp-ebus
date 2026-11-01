@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #if !defined(EBUS_INTERNAL)
 
 #include "bridge/arbitration.hpp"
