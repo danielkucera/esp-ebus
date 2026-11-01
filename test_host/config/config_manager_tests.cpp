@@ -3,10 +3,10 @@
 #include <ebus/detail/json_reader.hpp>
 #include <string>
 
+#include "api/http_stub_state.hpp"
 #include "app/app_limits.hpp"
 #include "config/app_config_loader.hpp"
 #include "config/config_manager.hpp"
-#include "api/http_stub_state.hpp"
 
 // The ConfigManager instance backing these tests. NVS itself is the
 // in-memory host mock (test_host/mocks/config/nvs_mock.cpp), so each case
@@ -164,7 +164,8 @@ TEST_CASE("Empty stored configuration still supplies page defaults",
           std::string::npos);
 }
 
-TEST_CASE("Configuration drift JSON closes before the HTTP terminator", "[config_nvs]") {
+TEST_CASE("Configuration drift JSON closes before the HTTP terminator",
+          "[config_nvs]") {
   config_manager.resetConfig();
   HostHttpStub::clearRoutes();
   ConfigManager::registerHandlers();

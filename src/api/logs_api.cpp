@@ -70,9 +70,7 @@ esp_err_t LogsApi::handleLogs(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   instance_->logger_.fetchLogs(
-      [&response](std::string_view chunk) {
-        response.write(chunk);
-      },
+      [&response](std::string_view chunk) { response.write(chunk); },
       since_millis);
   return response.finish();
 }
@@ -81,12 +79,12 @@ esp_err_t LogsApi::handleLogsTimeRelation(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->logger_.fetchTimeRelation([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  instance_->logger_.fetchTimeRelation(
+      [&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 
+// cppcheck-suppress unusedPrivateFunction
 esp_err_t LogsApi::handleTap(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   uint64_t since_millis = 0;
@@ -109,9 +107,7 @@ esp_err_t LogsApi::handleTap(httpd_req_t* req) {
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
   DeviceStatus::monitor().fetchTap(
-      [&response](std::string_view chunk) {
-        response.write(chunk);
-      },
+      [&response](std::string_view chunk) { response.write(chunk); },
       since_millis);
   return response.finish();
 }

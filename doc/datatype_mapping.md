@@ -143,6 +143,14 @@ here, not that the profile is unsupported by ebusd.
 | `char6` | CHAR6 | — | 1 | 0 | 0 | 0 | — | — |
 | `char7` | CHAR7 | — | 1 | 0 | 0 | 0 | — | — |
 | `char8` | CHAR8 | — | 1 | 0 | 0 | 0 | — | — |
+| `char9` | CHAR9 | — | 1 | 0 | 0 | 0 | — | — |
+| `char10` | CHAR10 | — | 1 | 0 | 0 | 0 | — | — |
+| `char11` | CHAR11 | — | 1 | 0 | 0 | 0 | — | — |
+| `char12` | CHAR12 | — | 1 | 0 | 0 | 0 | — | — |
+| `char13` | CHAR13 | — | 1 | 0 | 0 | 0 | — | — |
+| `char14` | CHAR14 | — | 1 | 0 | 0 | 0 | — | — |
+| `char15` | CHAR15 | — | 1 | 0 | 0 | 0 | — | — |
+| `char16` | CHAR16 | — | 1 | 0 | 0 | 0 | — | — |
 | `hex1` | HEX1 | — | 1 | 0 | 0 | 0 | — | — |
 | `hex2` | HEX2 | — | 1 | 0 | 0 | 0 | — | — |
 | `hex3` | HEX3 | — | 1 | 0 | 0 | 0 | — | — |
@@ -151,6 +159,14 @@ here, not that the profile is unsupported by ebusd.
 | `hex6` | HEX6 | — | 1 | 0 | 0 | 0 | — | — |
 | `hex7` | HEX7 | — | 1 | 0 | 0 | 0 | — | — |
 | `hex8` | HEX8 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex9` | HEX9 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex10` | HEX10 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex11` | HEX11 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex12` | HEX12 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex13` | HEX13 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex14` | HEX14 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex15` | HEX15 | — | 1 | 0 | 0 | 0 | — | — |
+| `hex16` | HEX16 | — | 1 | 0 | 0 | 0 | — | — |
 
 ### Scaling and formatting
 
@@ -205,7 +221,7 @@ value instead:
   (unknown in Home Assistant) — the honest reading for "no data".
 - `"raw": true`: sentinel bytes render as numbers (e.g. `UINT16`
   `0xFFFF` → 65535). Opt-in only; graphs will show the extreme.
-- Types without sentinels (`HEX3`–`HEX8`, `CHAR3`–`CHAR8`, `FLOAT4`,
+- Types without sentinels (`HEX3`–`HEX16`, `CHAR3`–`CHAR16`, `FLOAT4`,
   `FLOAT4R`) always render raw — the flag changes nothing for them.
 
 ---

@@ -45,9 +45,8 @@ esp_err_t ValuesApi::handleValues(httpd_req_t* req) {
   HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->command_manager_.fetchValues([&response](std::string_view chunk) {
-    response.write(chunk);
-  });
+  instance_->command_manager_.fetchValues(
+      [&response](std::string_view chunk) { response.write(chunk); });
   return response.finish();
 }
 

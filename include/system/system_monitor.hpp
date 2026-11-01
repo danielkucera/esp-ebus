@@ -8,14 +8,13 @@
 #include <freertos/task.h>
 
 #include <atomic>
-
-#include "system/detail/monitor_schedule.hpp"
 #include <cstdint>
 #include <string>
 #include <string_view>
 
 #include "app/command.hpp"
 #include "ebus/callbacks.hpp"
+#include "system/detail/monitor_schedule.hpp"
 
 // Bus byte tap (every bus event to console for captures): off by default,
 // enable capture builds with -DEBUS_BUS_TAP=1. The push path is POD-only

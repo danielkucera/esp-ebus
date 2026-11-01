@@ -28,7 +28,6 @@
             font-size: 13px;
             color: #333;
         }
-
     </style>
 </head>
 
@@ -505,7 +504,7 @@
                         ctx.lineTo(x, chartTop + chartHeight + 4);
                         ctx.stroke();
                         ctx.fillText(`${byteToHex(f.value)}`, x,
-                                     chartTop + chartHeight + 20 + uartData.yOffset);
+                            chartTop + chartHeight + 20 + uartData.yOffset);
                     }
                 }
             }
@@ -606,7 +605,7 @@
                         try {
                             const obj = JSON.parse(text);
                             if (obj && obj.error) msg = obj.error;
-                        } catch (_) {}
+                        } catch (_) { }
                         throw new Error(msg || 'raw response invalid');
                     }
 

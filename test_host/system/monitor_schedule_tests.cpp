@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <catch2/catch_test_macros.hpp>
+
 #include "system/detail/monitor_schedule.hpp"
 
-TEST_CASE("Bus notifications do not accelerate health or heap trend sampling", "[monitor]") {
+TEST_CASE("Bus notifications do not accelerate health or heap trend sampling",
+          "[monitor]") {
   app::detail::MonitorSchedule schedule;
   REQUIRE(schedule.statusDue(0));
   REQUIRE(schedule.summaryDue(0));
@@ -20,7 +22,8 @@ TEST_CASE("Bus notifications do not accelerate health or heap trend sampling", "
   REQUIRE(schedule.trendDue(3600000000ULL));
 }
 
-TEST_CASE("Delayed monitoring skips missed intervals and handles long uptimes", "[monitor]") {
+TEST_CASE("Delayed monitoring skips missed intervals and handles long uptimes",
+          "[monitor]") {
   app::detail::MonitorSchedule schedule;
   constexpr uint64_t now = 100ULL * 24 * 3600 * 1000000;
   REQUIRE(schedule.statusDue(now));
