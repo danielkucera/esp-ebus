@@ -28,28 +28,99 @@
             font-size: 13px;
             color: #333;
         }
+        .adc-controls {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .adc-settings {
+            display: flex;
+            align-items: flex-start;
+            gap: 24px;
+        }
+
+        .adc-settings-values {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .adc-control-row {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .adc-setting-row {
+            display: grid;
+            grid-template-columns: 100px 90px;
+            align-items: center;
+        }
+
+        .adc-channels {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .adc-channel-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 4px 12px;
+            max-width: 100%;
+        }
+
+        .adc-channel-grid label {
+            align-items: flex-start;
+        }
+
+        .adc-channel-grid input {
+            flex-shrink: 0;
+        }
+
+        @media (max-width: 520px) {
+            .adc-settings {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+
     </style>
 </head>
 
 <body>
     <h1>ADC</h1>
-    <div class="controls">
-        <button id="btnHome">Home</button>
-        <button id="btnDisable">Disable ADC</button>
-        <span style="margin-left:8px">Sample rate</span>
-        <input id="sampleRate" type="number" value="9600" min="600" max="200000" style="width:90px">
-        <span style="margin-left:8px">Sample count</span>
-        <input id="sampleCount" type="number" value="30000" min="1" style="width:90px" title="Per-channel samples">
-        <span style="margin-left:8px">Channels</span>
-        <label><input type="checkbox" class="channelSelect" value="0" checked>0 - PWM threshold</label>
-        <label><input type="checkbox" class="channelSelect" value="1" checked>1 - eBus voltage {1:7.47)</label>
-        <label><input type="checkbox" class="channelSelect" value="2">2</label>
-        <label><input type="checkbox" class="channelSelect" value="3" checked>3 - eBus TTL value</label>
-        <label><input type="checkbox" class="channelSelect" value="4">4</label>
-        <button id="btnRefresh">Run</button>
-        <button id="btnSaveJson">Save JSON</button>
-        <button id="btnResetZoom">Reset Zoom</button>
-        <span id="status">...</span>
+    <div class="controls adc-controls">
+        <div class="adc-control-row">
+            <button id="btnHome">Home</button>
+            <button id="btnDisable">Disable ADC</button>
+            <button id="btnRefresh">Run</button>
+            <button id="btnSaveJson">Save JSON</button>
+            <button id="btnResetZoom">Reset Zoom</button>
+            <span id="status">...</span>
+        </div>
+        <div class="adc-settings">
+            <div class="adc-settings-values">
+                <div>Settings</div>
+                <div class="adc-setting-row">
+                    <label for="sampleRate">Sample rate</label>
+                    <input id="sampleRate" type="number" value="9600" min="600" max="200000" style="width:90px">
+                </div>
+                <div class="adc-setting-row">
+                    <label for="sampleCount">Sample count</label>
+                    <input id="sampleCount" type="number" value="30000" min="1" style="width:90px" title="Per-channel samples">
+                </div>
+            </div>
+            <div class="adc-channels">
+                <div>Channels</div>
+                <div class="adc-channel-grid">
+                    <label><input type="checkbox" class="channelSelect" value="0" checked>0 - PWM threshold</label>
+                    <label><input type="checkbox" class="channelSelect" value="1" checked>1 - eBus voltage (1:7.47)</label>
+                    <label><input type="checkbox" class="channelSelect" value="2">2</label>
+                    <label><input type="checkbox" class="channelSelect" value="3" checked>3 - eBus TTL value</label>
+                    <label><input type="checkbox" class="channelSelect" value="4">4</label>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="chart-wrap">
