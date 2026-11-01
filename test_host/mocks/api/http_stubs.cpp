@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Host link stubs for HTTP server plumbing (never executed by Tier-1 tests).
 // config_manager.cpp references these symbols; the real implementations need
 // a live httpd server.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include <esp_timer.h>
 
 #include <catch2/catch_test_macros.hpp>

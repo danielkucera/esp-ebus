@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "config/config_manager.hpp"
 
 #include <esp_err.h>

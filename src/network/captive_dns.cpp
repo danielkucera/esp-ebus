@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "network/captive_dns.hpp"
 
 #include <lwip/ip_addr.h>

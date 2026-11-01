@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "api/logs_api.hpp"
 
 #if defined(EBUS_INTERNAL)
