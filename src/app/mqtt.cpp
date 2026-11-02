@@ -172,6 +172,11 @@ void Mqtt::setCredentials(const char* username, const char* password) {
   mqtt_cfg_.credentials.authentication.password = password_.c_str();
 }
 
+void Mqtt::setPayloadMode(MqttPayloadMode mode) {
+  std::lock_guard<std::recursive_mutex> lock(mqtt_mutex_);
+  payload_mode_ = mode;
+}
+
 void Mqtt::setRootTopic(const std::string& topic) {
   std::lock_guard<std::recursive_mutex> lock(mqtt_mutex_);
   root_topic_ = topic;
@@ -841,19 +846,58 @@ void Mqtt::handleValueUpdate(std::string_view key) {
     }
   }
 
-  if (connected_) {
+  if (!connected_) return;
+
+  auto lowerTopic = [](char* topic, int len) {
+    for (int i = 7; i < len; ++i)
+      topic[i] = (char)tolower((unsigned char)topic[i]);
+  };
+
+  const size_t field_count = cmd->getFieldCount();
+  if (field_count <= 1 || payload_mode_ == MqttPayloadMode::json_multivalue) {
     char topic_buf[128];
     int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s",
                      (int)cmd->getName().size(), cmd->getName().data());
-    if (n > 0 && (size_t)n < sizeof(topic_buf)) {
-      for (int i = 7; i < n; ++i)
-        topic_buf[i] = (char)tolower((unsigned char)topic_buf[i]);
+    if (n <= 0 || (size_t)n >= sizeof(topic_buf)) return;
+    lowerTopic(topic_buf, n);
 
+    if (payload_mode_ == MqttPayloadMode::plain) {
+      publishStream(topic_buf, 0, false, [&](const ebus::JsonChunkVisitor& v) {
+        v(cmd->getFieldPlain(0));
+      });
+    } else {
       publishStream(topic_buf, 0, false, [&](const ebus::JsonChunkVisitor& v) {
         ebus::detail::JsonWriter writer(v);
         auto scope = writer.objectScope();
         cmd->writeValuePayload(writer);
       });
+    }
+    return;
+  }
+
+  // One topic per field: values/<field>
+  for (size_t i = 0; i < field_count; ++i) {
+    const char* field_name = cmd->getFieldName(i);
+    if (!field_name || !field_name[0]) field_name = "value";
+
+    char topic_buf[128];
+    int n = snprintf(topic_buf, sizeof(topic_buf), "values/%s", field_name);
+    if (n <= 0 || (size_t)n >= sizeof(topic_buf)) continue;
+    lowerTopic(topic_buf, n);
+
+    if (payload_mode_ == MqttPayloadMode::plain) {
+      publishStream(topic_buf, 0, false,
+                    [cmd, i](const ebus::JsonChunkVisitor& v) {
+                      v(cmd->getFieldPlain(i));
+                    });
+    } else {
+      publishStream(topic_buf, 0, false,
+                    [cmd, i](const ebus::JsonChunkVisitor& v) {
+                      ebus::detail::JsonWriter writer(v);
+                      auto scope = writer.objectScope();
+                      writer.appendKey("value");
+                      cmd->writeFieldValue(writer, i);
+                    });
     }
   }
 }

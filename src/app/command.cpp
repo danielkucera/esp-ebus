@@ -406,10 +406,28 @@ bool Command::writeFieldText(ebus::detail::JsonWriter& writer, size_t i) const {
 void Command::writeValuePayload(ebus::detail::JsonWriter& writer) const {
   for (size_t i = 0; i < fields_.size(); ++i) {
     const char* fn = getFieldName(i);
-    std::string_view fname = (fn && fn[0]) ? fn : "value";
+    std::string_view fname =
+        fields_.size() == 1 ? "value" : ((fn && fn[0]) ? fn : "value");
     writer.appendKey(fname);
     writeFieldValue(writer, i);
   }
+}
+
+std::string Command::getFieldPlain(size_t i) const {
+  std::string json;
+  ebus::detail::JsonWriter writer([&json](std::string_view s) { json += s; });
+  writeFieldValue(writer, i);
+  writer.flush();
+  if (json.size() < 2 || json.front() != '"' || json.back() != '"') {
+    return json;
+  }
+  std::string out;
+  out.reserve(json.size());
+  for (size_t k = 1; k + 1 < json.size(); ++k) {
+    if (json[k] == '\\' && k + 2 < json.size()) ++k;
+    out += json[k];
+  }
+  return out;
 }
 
 void Command::getValueJson(ebus::detail::JsonWriter& writer) const {

@@ -130,3 +130,18 @@ TEST_CASE("AppConfig::collectDrift reports staged keys only", "[app_config]") {
   REQUIRE(keys[0] == "ebusAddress");
   REQUIRE(keys[1] == "mqttEnabled");
 }
+
+TEST_CASE("AppConfig mqttPayload selects the MQTT payload mode",
+          "[app_config]") {
+  AppConfig cfg;
+  cfg.reset();
+  REQUIRE(cfg.mqtt.payload_mode == MqttPayloadMode::json_multivalue);
+
+  REQUIRE(cfg.mergeFlatJson(R"({"mqttPayload":"plain"})") == true);
+  REQUIRE(cfg.mqtt.payload_mode == MqttPayloadMode::plain);
+  REQUIRE(cfg.mergeFlatJson(R"({"mqttPayload":"json_single"})") == true);
+  REQUIRE(cfg.mqtt.payload_mode == MqttPayloadMode::json_singlevalue);
+  REQUIRE(cfg.mergeFlatJson(R"({"mqttPayload":"bogus"})") == true);
+  REQUIRE(cfg.mqtt.payload_mode == MqttPayloadMode::json_multivalue);
+  REQUIRE(AppConfig::isKnownFlatKey("mqttPayload") == true);
+}

@@ -141,6 +141,12 @@
         <div><label for="rootTopic">Root Topic</label></div>
         <div><input id="rootTopic" type="text" class="config" placeholder="leave empty for ebus/&lt;<LOW_MAC>&gt;/"
                 spellcheck="false"></div>
+        <div><label for="mqttPayload">Value Payload</label></div>
+        <div><select id="mqttPayload" class="config" aria-label="MQTT Value Payload">
+                <option value="json_multi" selected>JSON, all fields in one topic (values/&lt;command&gt;)</option>
+                <option value="json_single">JSON, one topic per field (values/&lt;field&gt;)</option>
+                <option value="plain">Plain value, one topic per field (values/&lt;field&gt;)</option>
+        </select></div>
     </fieldset>
 
     <fieldset>

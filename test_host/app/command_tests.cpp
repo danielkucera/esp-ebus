@@ -189,7 +189,8 @@ TEST_CASE("Command writeValuePayload formats single and multi fields flat",
       cmd.writeValuePayload(writer);
     }
 
-    REQUIRE(out.find("\"middle_temperature\":") != std::string::npos);
+    REQUIRE(out.find("\"value\":") != std::string::npos);
+    REQUIRE(out.find("\"middle_temperature\"") == std::string::npos);
   }
 
   SECTION("Multi field") {
@@ -219,6 +220,24 @@ TEST_CASE("Command writeValuePayload formats single and multi fields flat",
     REQUIRE(out.find("\"middle_temperature\":") != std::string::npos);
     REQUIRE(out.find("\"state\":85") != std::string::npos);
   }
+}
+
+TEST_CASE("Command getFieldPlain returns the unquoted value", "[Command]") {
+  std::string json = R"({"key":"09","name":"Temp","read_cmd":"08b50903290100",)"
+                     R"("master":false,"fields":[{"name":"t",)"
+                     R"("profile":"data2c_celsius","position":1}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  ebus::Sequence data;
+  data.push_back(0x50);
+  data.push_back(0x01);
+  cmd.setData(ebus::ByteView(data));
+
+  const std::string plain = cmd.getFieldPlain(0);
+  REQUIRE(!plain.empty());
+  REQUIRE(plain.find('"') == std::string::npos);
+  REQUIRE(plain.find('{') == std::string::npos);
 }
 
 TEST_CASE("Command getVectorFromString demands exact bytes", "[Command]") {
