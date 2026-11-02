@@ -327,6 +327,23 @@ void Command::writeValuePayload(ebus::detail::JsonWriter& writer) const {
   }
 }
 
+std::string Command::getFieldPlain(size_t i) const {
+  std::string json;
+  ebus::detail::JsonWriter writer([&json](std::string_view s) { json += s; });
+  writeFieldValue(writer, i);
+  writer.flush();
+  if (json.size() < 2 || json.front() != '"' || json.back() != '"') {
+    return json;
+  }
+  std::string out;
+  out.reserve(json.size());
+  for (size_t k = 1; k + 1 < json.size(); ++k) {
+    if (json[k] == '\\' && k + 2 < json.size()) ++k;
+    out += json[k];
+  }
+  return out;
+}
+
 void Command::getValueJson(ebus::detail::JsonWriter& writer) const {
   if (fields_.empty()) {
     writer.writeRaw("null");

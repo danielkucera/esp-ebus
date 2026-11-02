@@ -114,26 +114,51 @@ TEST_CASE("MqttHA publishes sensor discovery config", "[mqttha]") {
   REQUIRE(payloadContains(msg, R"("value_template":"{{value_json.value}}")"));
 }
 
-TEST_CASE("MqttHA multi-field discovery uses per-field flat state topics",
+TEST_CASE("MqttHA multi-field discovery follows the payload mode",
           "[mqttha]") {
   Recorder recorder;
   registerMultiTempCommand();
   MqttHA ha = makeHa(recorder);
-
   const Command* cmd = command_manager.findCommand("02");
   REQUIRE(cmd != nullptr);
-  ha.publishComponent(cmd, 0, false);
-  ha.publishComponent(cmd, 1, false);
 
-  REQUIRE(recorder.messages.size() == 2);
-  REQUIRE(payloadContains(recorder.messages[0],
-                          R"("state_topic":"ebus/820b80/values/temp01")"));
-  REQUIRE(payloadContains(recorder.messages[0],
-                          R"("value_template":"{{value_json.value}}")"));
-  REQUIRE(payloadContains(recorder.messages[1],
-                          R"("state_topic":"ebus/820b80/values/temp02")"));
-  REQUIRE(payloadContains(recorder.messages[1],
-                          R"("value_template":"{{value_json.value}}")"));
+  SECTION("json multivalue: shared topic, field keys") {
+    ha.setPayloadMode(MqttPayloadMode::json_multivalue);
+    ha.publishComponent(cmd, 0, false);
+    ha.publishComponent(cmd, 1, false);
+    REQUIRE(recorder.messages.size() == 2);
+    REQUIRE(payloadContains(recorder.messages[0],
+                            R"("state_topic":"ebus/820b80/values/temp01")"));
+    REQUIRE(payloadContains(recorder.messages[0],
+                            R"("value_template":"{{value_json.temp01}}")"));
+    REQUIRE(payloadContains(recorder.messages[1],
+                            R"("state_topic":"ebus/820b80/values/temp01")"));
+    REQUIRE(payloadContains(recorder.messages[1],
+                            R"("value_template":"{{value_json.temp02}}")"));
+  }
+
+  SECTION("json single value: topic per field") {
+    ha.setPayloadMode(MqttPayloadMode::json_singlevalue);
+    ha.publishComponent(cmd, 0, false);
+    ha.publishComponent(cmd, 1, false);
+    REQUIRE(recorder.messages.size() == 2);
+    REQUIRE(payloadContains(recorder.messages[0],
+                            R"("state_topic":"ebus/820b80/values/temp01")"));
+    REQUIRE(payloadContains(recorder.messages[1],
+                            R"("state_topic":"ebus/820b80/values/temp02")"));
+    REQUIRE(payloadContains(recorder.messages[1],
+                            R"("value_template":"{{value_json.value}}")"));
+  }
+
+  SECTION("plain: topic per field, raw value") {
+    ha.setPayloadMode(MqttPayloadMode::plain);
+    ha.publishComponent(cmd, 1, false);
+    REQUIRE(recorder.messages.size() == 1);
+    REQUIRE(payloadContains(recorder.messages[0],
+                            R"("state_topic":"ebus/820b80/values/temp02")"));
+    REQUIRE(payloadContains(recorder.messages[0],
+                            R"("value_template":"{{value}}")"));
+  }
 }
 
 TEST_CASE("MqttHA remove publishes empty retained payload", "[mqttha]") {
