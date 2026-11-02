@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include <cstdint>
@@ -6,6 +7,8 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "app/mqtt_payload.hpp"
 
 struct AppConfig {
   struct Network {
@@ -46,6 +49,7 @@ struct AppConfig {
     ebus::FixedString<32> user;
     ebus::FixedString<32> pass;
     ebus::FixedString<32> root_topic;
+    MqttPayloadMode payload_mode = MqttPayloadMode::json_multivalue;
   } mqtt;
 
   struct MqttHa {

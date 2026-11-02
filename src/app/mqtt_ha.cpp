@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #if defined(EBUS_INTERNAL)
 #include "app/mqtt_ha.hpp"
 
@@ -84,6 +85,8 @@ void MqttHA::setRootTopic(const std::string& topic) {
   }
   command_topic_ = root_topic_ + "request";
 }
+
+void MqttHA::setPayloadMode(MqttPayloadMode mode) { payload_mode_ = mode; }
 
 void MqttHA::setWillTopic(const std::string& topic) { will_topic_ = topic; }
 
@@ -257,6 +260,23 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
   const std::string& dev_id = device_identifiers_;
 
   std::string_view field_name_sv = command->getFieldName(field_idx);
+  const bool plain = payload_mode_ == MqttPayloadMode::plain;
+  const bool per_field = command->getFieldCount() > 1 &&
+                         payload_mode_ != MqttPayloadMode::json_multivalue;
+  // Name of the key inside the state JSON object (multivalue keeps field
+  // names; single-field commands and per-field topics use "value").
+  std::string_view state_field_name_sv =
+      (command->getFieldCount() > 1 && !per_field && !field_name_sv.empty())
+          ? field_name_sv
+          : "value";
+  char value_expr_buf[mqtt_ha_buffer_limits::max_value_template_length];
+  if (plain) {
+    snprintf(value_expr_buf, sizeof(value_expr_buf), "value");
+  } else {
+    snprintf(value_expr_buf, sizeof(value_expr_buf), "value_json.%.*s",
+             (int)state_field_name_sv.size(), state_field_name_sv.data());
+  }
+  const std::string_view value_expr = value_expr_buf;
   std::string_view key_sv = command->getKey();
 
   char raw_object_id_buf[mqtt_ha_buffer_limits::max_raw_object_id_length];
@@ -285,8 +305,15 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
   }
 
   char state_topic_buf[mqtt_ha_buffer_limits::max_state_topic_length];
-  createStateTopic(state_topic_buf, sizeof(state_topic_buf), "values",
-                   command->getName());
+  if (per_field) {
+    const std::string_view field_topic_name =
+        field_name_sv.empty() ? "value" : field_name_sv;
+    createStateTopic(state_topic_buf, sizeof(state_topic_buf), "values",
+                     field_topic_name);
+  } else {
+    createStateTopic(state_topic_buf, sizeof(state_topic_buf), "values",
+                     command->getName());
+  }
 
   char value_template_buf[mqtt_ha_buffer_limits::max_value_template_length];
 
@@ -341,7 +368,6 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
           writer.writeField("identifiers", device_identifiers_);
         }
 
-        // All fields of a command share the same state topic
         writer.writeField("state_topic", state_topic_buf);
 
         if (profile && profile->device_class && profile->device_class[0])
@@ -358,9 +384,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
                    profile ? profile->payload_off : 0);
           writer.writeField("payload_on", payload_on_buf);
           writer.writeField("payload_off", payload_off_buf);
-          snprintf(value_template_buf, sizeof(value_template_buf),
-                   "{{value_json.%.*s}}", (int)field_name_sv.size(),
-                   field_name_sv.data());
+          snprintf(value_template_buf, sizeof(value_template_buf), "{{%.*s}}",
+                   (int)value_expr.size(), value_expr.data());
           writer.writeField("value_template", value_template_buf);
         }
 
@@ -383,9 +408,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
         if (component == "number") {
           writer.writeField("unit_of_measurement",
                             getFieldUnit(command, field_idx));
-          snprintf(value_template_buf, sizeof(value_template_buf),
-                   "{{value_json.%.*s}}", (int)field_name_sv.size(),
-                   field_name_sv.data());
+          snprintf(value_template_buf, sizeof(value_template_buf), "{{%.*s}}",
+                   (int)value_expr.size(), value_expr.data());
           writer.writeField("value_template", value_template_buf);
           writer.writeField("command_template", "{{value}}");
           writer.writeFieldFloat("min", getFieldMin(command, field_idx));
@@ -401,7 +425,9 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
         }
 
         if (profile && profile->key_value_count > 0) {
-          auto opt = createOptions(profile, field_name_sv);
+          // Plain payloads are text; map through int for the numeric keys.
+          auto opt = createOptions(
+              profile, plain ? std::string_view("(value | int)") : value_expr);
           if (component == "select") {
             {
               auto options = writer.arrayScope("options");
@@ -411,9 +437,8 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
           }
           writer.writeField("value_template", opt.value_map);
         } else if (component == "sensor") {
-          snprintf(value_template_buf, sizeof(value_template_buf),
-                   "{{value_json.%.*s}}", (int)field_name_sv.size(),
-                   field_name_sv.data());
+          snprintf(value_template_buf, sizeof(value_template_buf), "{{%.*s}}",
+                   (int)value_expr.size(), value_expr.data());
           writer.writeField("value_template", value_template_buf);
         }
       },
@@ -509,7 +534,7 @@ void MqttHA::createStateTopic(char* out, size_t out_size,
 }
 
 MqttHA::KeyValueMapping MqttHA::createOptions(const HAProfile* profile,
-                                              std::string_view field_name) {
+                                              std::string_view value_expr) {
   if (!profile) return KeyValueMapping{};
 
   // Use stack buffers instead of std::string to reduce heap fragmentation
@@ -573,10 +598,10 @@ MqttHA::KeyValueMapping MqttHA::createOptions(const HAProfile* profile,
   }
 
   snprintf(value_map_buf + vm_len, sizeof(value_map_buf) - vm_len,
-           "} %%}{{ values[value_json.%.*s] if value_json.%.*s in "
+           "} %%}{{ values[%.*s] if %.*s in "
            "values.keys() else '%s' }}",
-           (int)field_name.size(), field_name.data(), (int)field_name.size(),
-           field_name.data(), options_count > 0 ? options_values[0] : "");
+           (int)value_expr.size(), value_expr.data(), (int)value_expr.size(),
+           value_expr.data(), options_count > 0 ? options_values[0] : "");
 
   snprintf(cmd_map_buf + pn_len, sizeof(cmd_map_buf) - pn_len,
            "} %%}{{ values[value] if value in values.keys() else "

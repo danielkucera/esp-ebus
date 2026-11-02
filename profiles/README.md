@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Profile Definitions (`profiles/`)
 
 This directory contains compile-time definitions for **Data Profiles** and **Home Assistant (HA) Profiles**. 

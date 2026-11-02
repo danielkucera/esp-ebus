@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # esp-ebus
 
 ESP-based Wi-Fi firmware for eBUS adapter hardware

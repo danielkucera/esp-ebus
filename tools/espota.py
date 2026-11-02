@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Original espota.py by Ivan Grokhotkov:
 # https://gist.github.com/igrr/d35ab8446922179dc58c

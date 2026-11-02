@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 Pre-build script for PlatformIO.
 Writes include/app/build_info_gen.hpp with the current build timestamp, so

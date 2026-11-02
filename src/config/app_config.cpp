@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "config/app_config.hpp"
 
 #include <cstdlib>
@@ -89,8 +90,8 @@ bool AppConfig::isKnownFlatKey(std::string_view key) {
          key == "ebusAddress" || key == "busWindow" || key == "systemInquiry" ||
          key == "systemResponse" || key == "scanOnStartup" ||
          key == "mqttEnabled" || key == "mqttServer" || key == "mqttUser" ||
-         key == "mqttPass" || key == "rootTopic" || key == "haEnabled" ||
-         key == "thingName" || key == "httpHeaders";
+         key == "mqttPass" || key == "rootTopic" || key == "mqttPayload" ||
+         key == "haEnabled" || key == "thingName" || key == "httpHeaders";
 }
 
 bool AppConfig::mergeFlatJson(
@@ -167,6 +168,8 @@ bool AppConfig::mergeFlatJson(
         if (!value.empty()) mqtt.pass.assign(value);
       } else if (key == "rootTopic") {
         mqtt.root_topic.assign(value);
+      } else if (key == "mqttPayload") {
+        mqtt.payload_mode = parseMqttPayloadMode(value);
       } else if (key == "haEnabled") {
         mqtt_ha.enabled = parseFlatBool(value);
       } else if (key == "thingName") {
@@ -240,6 +243,8 @@ void AppConfig::collectDrift(const AppConfig& live, const AppConfig& requested,
     keys.emplace_back("mqttPass");
   if (driftStr(live.mqtt.root_topic, requested.mqtt.root_topic))
     keys.emplace_back("rootTopic");
+  if (live.mqtt.payload_mode != requested.mqtt.payload_mode)
+    keys.emplace_back("mqttPayload");
   if (live.mqtt_ha.enabled != requested.mqtt_ha.enabled)
     keys.emplace_back("haEnabled");
   if (driftStr(live.mqtt_ha.thing_name, requested.mqtt_ha.thing_name))

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 Pre-build script for PlatformIO.
 Reads data_profiles.json + data_profiles_user.json and generates include/app/data_profile_gen.hpp

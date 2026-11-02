@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #if defined(EBUS_INTERNAL)
@@ -16,6 +17,7 @@
 
 #include "app/command.hpp"
 #include "app/ebus_accessor.hpp"
+#include "app/mqtt_payload.hpp"
 #include "config/app_config.hpp"
 #include "ebus/detail/json_writer.hpp"
 #include "ebus/device.hpp"
@@ -122,6 +124,7 @@ class Mqtt {
   void setServer(const char* host, uint16_t port);
   void setCredentials(const char* username, const char* password = nullptr);
   void setRootTopic(const std::string& topic);
+  void setPayloadMode(MqttPayloadMode mode);
 
   void setEnabled(const bool enable);
   bool isEnabled() const;
@@ -187,6 +190,7 @@ class Mqtt {
 
   std::string uri_;
 
+  MqttPayloadMode payload_mode_ = MqttPayloadMode::json_multivalue;
   bool enabled_ = false;
   volatile bool task_should_run_ = false;
   volatile bool task_exited_ = false;

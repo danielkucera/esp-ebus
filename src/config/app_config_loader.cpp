@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "config/app_config_loader.hpp"
 
 #include "config/config_manager.hpp"
@@ -83,6 +84,8 @@ bool AppConfigLoader::load(AppConfig& config) {
                               config_manager_.readString("mqttPass"));
   assignFixedStringIfNotEmpty(config.mqtt.root_topic,
                               config_manager_.readString("rootTopic"));
+  config.mqtt.payload_mode =
+      parseMqttPayloadMode(config_manager_.readString("mqttPayload"));
 
   // MQTT HA
   config.mqtt_ha.enabled = config_manager_.readBool("haEnabled");
@@ -148,6 +151,8 @@ bool AppConfigLoader::save(const AppConfig& config) {
   ok &= config_manager_.writeString("mqttPass", config.mqtt.pass.c_str());
   ok &=
       config_manager_.writeString("rootTopic", config.mqtt.root_topic.c_str());
+  ok &= config_manager_.writeString(
+      "mqttPayload", mqttPayloadModeName(config.mqtt.payload_mode).data());
 
   // MQTT HA
   ok &= config_manager_.writeString("haEnabled",

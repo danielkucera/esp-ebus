@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Configuration Files (`config/`)
 
 This directory contains command configuration files for the eBUS adapter and virtual bus simulation.

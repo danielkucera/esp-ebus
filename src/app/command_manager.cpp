@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #if defined(EBUS_INTERNAL)
 #include "app/command_manager.hpp"
 
@@ -232,9 +233,9 @@ int64_t CommandManager::saveCommands() const {
     // Header row for compressed format
     {
       auto header_array = writer.arrayScope();
-      static const char* header[] = {"key",       "name",     "read_cmd",
-                                     "write_cmd", "interval", "master",
-                                     "fields", "write_type"};
+      static const char* header[] = {"key",       "name",      "read_cmd",
+                                     "write_cmd", "interval",  "master",
+                                     "fields",    "write_type"};
       for (const char* h : header) writer.writeValue(h);
     }
 

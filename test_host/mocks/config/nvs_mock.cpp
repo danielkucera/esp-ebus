@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Host mock backend for ESP-IDF NVS: single-namespace in-memory map.
 // Faithfully replicates the nvs_get_str two-call protocol (length query
 // including NUL, then fetch with guaranteed NUL termination).

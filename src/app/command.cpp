@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #if defined(EBUS_INTERNAL)
 #include "app/command.hpp"
 
@@ -68,8 +69,8 @@ ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
     constexpr size_t parameter_offset = checksum_offset + 1;
     constexpr uint8_t suffix[] = {0x5d, 0x01, 0x00, 0x00};
 
-    if (prefix.size() != prefix_size || prefix[1] != 0x50 || prefix[2] != 0x23 ||
-        prefix[3] != 9 || value.size() != value_size) {
+    if (prefix.size() != prefix_size || prefix[1] != 0x50 ||
+        prefix[2] != 0x23 || prefix[3] != 9 || value.size() != value_size) {
       return {};
     }
 
@@ -79,7 +80,7 @@ ebus::Sequence Command::buildWriteSequence(const CommandManager& manager,
 
     // Cover the parameter ID, encoded value and suffix, excluding the header.
     const ebus::ByteView payload(result.data() + parameter_offset,
-                                result.size() - parameter_offset);
+                                 result.size() - parameter_offset);
     const uint8_t checksum = weishauptChecksum(payload);
     uint8_t frame[prefix_size + value_size + sizeof(suffix)];
     std::copy(result.begin(), result.end(), frame);
@@ -319,10 +320,28 @@ bool Command::writeFieldText(ebus::detail::JsonWriter& writer, size_t i) const {
 void Command::writeValuePayload(ebus::detail::JsonWriter& writer) const {
   for (size_t i = 0; i < fields_.size(); ++i) {
     const char* fn = getFieldName(i);
-    std::string_view fname = (fn && fn[0]) ? fn : "value";
+    std::string_view fname =
+        fields_.size() == 1 ? "value" : ((fn && fn[0]) ? fn : "value");
     writer.appendKey(fname);
     writeFieldValue(writer, i);
   }
+}
+
+std::string Command::getFieldPlain(size_t i) const {
+  std::string json;
+  ebus::detail::JsonWriter writer([&json](std::string_view s) { json += s; });
+  writeFieldValue(writer, i);
+  writer.flush();
+  if (json.size() < 2 || json.front() != '"' || json.back() != '"') {
+    return json;
+  }
+  std::string out;
+  out.reserve(json.size());
+  for (size_t k = 1; k + 1 < json.size(); ++k) {
+    if (json[k] == '\\' && k + 2 < json.size()) ++k;
+    out += json[k];
+  }
+  return out;
 }
 
 void Command::getValueJson(ebus::detail::JsonWriter& writer) const {
@@ -551,7 +570,8 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
       command.setWriteCmd(std::move(write_cmd), command_manager);
     } else if (key == "write_type")
       command.write_type_ = token == ebus::detail::JsonReader::Token::string
-          ? parseWriteType(r.value()) : command_types::WriteType::invalid;
+                                ? parseWriteType(r.value())
+                                : command_types::WriteType::invalid;
     else if (key == "interval")
       command.interval_ = r.asNum<uint16_t>();
     else if (key == "master")
@@ -737,7 +757,8 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader) {
       } break;
       case 7:
         command.write_type_ = token == ebus::detail::JsonReader::Token::string
-            ? parseWriteType(reader.value()) : command_types::WriteType::invalid;
+                                  ? parseWriteType(reader.value())
+                                  : command_types::WriteType::invalid;
         break;
       default:
         reader.skipComposite(token);

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "api/commands_api.hpp"
 
 #if defined(EBUS_INTERNAL)
@@ -83,13 +84,12 @@ esp_err_t CommandsApi::handleCommandsPage(httpd_req_t* req) {
 }
 
 esp_err_t CommandsApi::handleCommands(httpd_req_t* req) {
+  HttpUtils::ChunkedResponse response(req);
   httpd_resp_set_type(req, "application/json;charset=utf-8");
   HttpUtils::applyCustomHeaders(req);
-  instance_->command_manager_.fetchCommands([req](std::string_view chunk) {
-    httpd_resp_send_chunk(req, chunk.data(), chunk.size());
-  });
-  httpd_resp_send_chunk(req, nullptr, 0);
-  return ESP_OK;
+  instance_->command_manager_.fetchCommands(
+      [&response](std::string_view chunk) { response.write(chunk); });
+  return response.finish();
 }
 
 esp_err_t CommandsApi::handleCommandsEvaluate(httpd_req_t* req) {
@@ -193,12 +193,13 @@ esp_err_t CommandsApi::handleCommandsUpload(httpd_req_t* req) {
     return ESP_OK;
   }
 
-  const char* tmp_path = "/littlefs/commands.json.tmp";
 #ifdef EBUS_COMMANDS_TMP_FILE_PATH
   char host_tmp_path[256];
   std::snprintf(host_tmp_path, sizeof(host_tmp_path), "%s.%ld",
                 EBUS_COMMANDS_TMP_FILE_PATH, static_cast<long>(getpid()));
-  tmp_path = host_tmp_path;
+  const char* tmp_path = host_tmp_path;
+#else
+  const char* tmp_path = "/littlefs/commands.json.tmp";
 #endif
 
   FILE* file = std::fopen(tmp_path, "wb");

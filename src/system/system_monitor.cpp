@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #if defined(EBUS_INTERNAL)
 #include "system/system_monitor.hpp"
 
@@ -20,8 +21,6 @@
 #include "system/logger.hpp"
 
 namespace {
-constexpr uint32_t system_monitor_period_ms = 30000;
-constexpr uint32_t log_summary_interval_ms = 300000;
 constexpr size_t log_queue_size = 8;
 constexpr size_t protocol_queue_size = 8;
 
@@ -78,6 +77,7 @@ static StaticQueue_t protocol_queue_cb;
 TaskHandle_t SystemMonitor::taskHandle() const { return task_handle_; }
 
 bool SystemMonitor::begin() {
+  schedule_ = app::detail::MonitorSchedule{};
   status_mux_ = portMUX_INITIALIZER_UNLOCKED;
   status_.uptime_seconds = 0;
   status_.free_heap = 0;
@@ -291,21 +291,19 @@ void SystemMonitor::taskEntry(void* arg) {
 }
 
 void SystemMonitor::taskLoop() {
-  uint32_t last_summary = 0;
-
   for (;;) {
-    if (xTaskNotifyWait(0, 0, nullptr,
-                        pdMS_TO_TICKS(system_monitor_period_ms)) == pdTRUE) {
-      processLogRequests();
-      processProtocolInfo();
+    const uint64_t now_us = esp_timer_get_time();
+    if (schedule_.statusDue(now_us)) {
+      collectStatus();
+      if (schedule_.summaryDue(now_us)) logSummary();
     }
 
-    collectStatus();
-
-    uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    if (now - last_summary >= log_summary_interval_ms) {
-      last_summary = now;
-      logSummary();
+    const uint32_t wait_ms = schedule_.waitMs(esp_timer_get_time());
+    const TickType_t wait_ticks =
+        (wait_ms + portTICK_PERIOD_MS - 1) / portTICK_PERIOD_MS;
+    if (xTaskNotifyWait(0, UINT32_MAX, nullptr, wait_ticks) == pdTRUE) {
+      processLogRequests();
+      processProtocolInfo();
     }
   }
 }
@@ -440,18 +438,21 @@ size_t SystemMonitor::fetchHeapTrend(HeapSample* out, size_t capacity) const {
 }
 
 void SystemMonitor::collectStatus() {
-  portENTER_CRITICAL(&status_mux_);
-  status_.uptime_seconds =
-      static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
-  status_.free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-  status_.min_free_heap = heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
+  const uint64_t now_us = esp_timer_get_time();
   multi_heap_info_t info;
+  // Heap walks and socket calls may be expensive; never mask interrupts here.
   heap_caps_get_info(&info, MALLOC_CAP_8BIT);
+  int detected = 0;
+  int connected = 0;
+  getSocketStatus(detected, connected);
+
+  const bool sample_trend = schedule_.trendDue(now_us);
+  portENTER_CRITICAL(&status_mux_);
+  status_.uptime_seconds = static_cast<uint32_t>(now_us / 1000000ULL);
+  status_.free_heap = info.total_free_bytes;
+  status_.min_free_heap = info.minimum_free_bytes;
   status_.largest_free_block = info.largest_free_block;
-  // Hourly trend sample (collectStatus runs every 30 s): answers
-  // leak-vs-fragmentation without polling.
-  if (++heap_trend_tick_ >= 120) {
-    heap_trend_tick_ = 0;
+  if (sample_trend) {
     heap_trend_[heap_trend_index_] = {status_.uptime_seconds, status_.free_heap,
                                       status_.min_free_heap,
                                       status_.largest_free_block};
@@ -460,9 +461,6 @@ void SystemMonitor::collectStatus() {
   }
   portEXIT_CRITICAL(&status_mux_);
 
-  int detected = 0;
-  int connected = 0;
-  getSocketStatus(detected, connected);
   sockets_detected_.store(detected);
   sockets_connected_.store(connected);
 }

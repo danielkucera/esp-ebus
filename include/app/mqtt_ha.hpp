@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #if defined(EBUS_INTERNAL)
@@ -6,6 +7,7 @@
 
 #include "app/command.hpp"
 #include "app/ha_profile.hpp"
+#include "app/mqtt_payload.hpp"
 #include "ebus/types.hpp"
 
 // clang-format off
@@ -28,6 +30,7 @@ class MqttHA {
   void setUniqueId(const std::string& id);
   void setRootTopic(const std::string& topic);
   void setWillTopic(const std::string& topic);
+  void setPayloadMode(MqttPayloadMode mode);
 
   void setEnabled(const bool enable);
   bool isEnabled() const;
@@ -72,6 +75,7 @@ class MqttHA {
 
  private:
   Transport transport_;
+  MqttPayloadMode payload_mode_ = MqttPayloadMode::json_multivalue;
   std::string unique_id_;           // e.g. "8406ac"
   std::string device_identifiers_;  // e.g. "ebus8406ac"
   std::string root_topic_;          // e.g. "ebus8406ac/"
@@ -102,8 +106,10 @@ class MqttHA {
     ebus::FixedString<mqtt_ha_limits::max_option_value_map_length> cmd_map;
   };
 
+  // value_expr is the Jinja expression yielding the raw state value, e.g.
+  // "value_json.value" or "value".
   static KeyValueMapping createOptions(const HAProfile* profile,
-                                       std::string_view field_name);
+                                       std::string_view value_expr);
 
   static const HAProfile* resolveProfile(const Command* command,
                                          size_t field_idx);

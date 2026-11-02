@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // common.js - Shared JavaScript utilities for esp-ebus web UI
 
 /**

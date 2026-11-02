@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Dumps all relevant read-only API endpoints into one timestamped JSON file
 # for attaching to a debug session. Never calls POST/action endpoints.
 #

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
 cmake_minimum_required(VERSION 3.16.0)
 project(esp_ebus_app_tests LANGUAGES CXX)
 
@@ -17,7 +18,7 @@ set(PROJECT_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
 # ebus source: local working tree when the lib/ebus symlink is present,
 # pinned FetchContent otherwise (CI has no symlink). Keep EBUS_PIN in sync
 # with the lib_deps pin in platformio.ini.
-set(EBUS_PIN f730dce62ca1ce831badebba75ffb537da40d1e2)
+set(EBUS_PIN 44de88e8dd57b268cd72bc8e5be33c66fab1aac4)
 if(EXISTS ${PROJECT_ROOT}/lib/ebus/CMakeLists.txt)
     set(EBUS_SOURCE_DIR ${PROJECT_ROOT}/lib/ebus)
     # No host utilities in test builds (faster configure/build).
@@ -183,6 +184,7 @@ target_link_libraries(network_tests PRIVATE
 
 add_executable(system_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/system/string_pool_tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/system/monitor_schedule_tests.cpp
 )
 target_link_libraries(system_tests PRIVATE
     system_test_support
@@ -269,7 +271,9 @@ find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE)
     add_test(NAME config_page_defaults
         COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/web/config_page_tests.cjs)
-    set_tests_properties(config_page_defaults PROPERTIES ENVIRONMENT "ELECTRON_RUN_AS_NODE=1")
+    add_test(NAME logs_page_retention
+        COMMAND ${NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/web/logs_page_tests.cjs)
+    set_tests_properties(config_page_defaults logs_page_retention PROPERTIES ENVIRONMENT "ELECTRON_RUN_AS_NODE=1")
 endif()
 include(CTest)
 # Per-case CTest entries: timeouts apply per case,

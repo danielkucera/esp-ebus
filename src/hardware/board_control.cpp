@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "hardware/board_control.hpp"
 
 #include <driver/gpio.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "app/app.hpp"
 
 #include <freertos/FreeRTOS.h>
@@ -128,12 +129,14 @@ bool App::initServices() {
   if (!mqtt_config.root_topic.empty()) {
     mqtt_.setRootTopic(std::string(mqtt_config.root_topic.c_str()));
   }
+  mqtt_.setPayloadMode(mqtt_config.payload_mode);
   mqtt_.start();
 
   mqtt_ha_.setUniqueId(mqtt_.getUniqueId());
   mqtt_ha_.setRootTopic(mqtt_.getRootTopic());
   mqtt_ha_.setWillTopic(mqtt_.getWillTopic());
   mqtt_ha_.setEnabled(config_.mqtt_ha.enabled);
+  mqtt_ha_.setPayloadMode(mqtt_config.payload_mode);
 
   mqtt_ha_.setThingName(std::string(config_.mqtt_ha.thing_name.c_str()));
   mqtt_ha_.setThingHwVersion(getAdapterHwVersionString());

@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #include <netinet/in.h>
+
 #include <cstdint>
 
 typedef struct esp_netif_obj esp_netif_t;

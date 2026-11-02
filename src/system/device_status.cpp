@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "system/device_status.hpp"
 
 #include <esp_chip_info.h>

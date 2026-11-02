@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
 #if !defined(EBUS_INTERNAL)
@@ -71,7 +72,6 @@ class BusState {
       case received_address_after_first_syn:
         previous_state = state;
         state = symbol == syn_byte ? syn(received_second_syn) : busy;
-        symbol = symbol;
         break;
       case received_second_syn:
         previous_state = state;
@@ -82,7 +82,6 @@ class BusState {
       case received_address_after_second_syn:
         previous_state = state;
         state = symbol == syn_byte ? error(state, received_first_syn) : busy;
-        symbol = symbol;
         break;
       case busy:
         previous_state = state;
