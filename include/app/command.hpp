@@ -107,6 +107,8 @@ class Command {
   // maps (key_value_pairs); returns false (writes nothing) otherwise.
   bool writeFieldText(ebus::detail::JsonWriter& writer, size_t i) const;
   void writeValuePayload(ebus::detail::JsonWriter& writer) const;
+  // Raw (unquoted, unescaped) text of field i; "null" when undecodable.
+  std::string getFieldPlain(size_t i) const;
 
   void getValueJson(ebus::detail::JsonWriter& writer) const;
 
