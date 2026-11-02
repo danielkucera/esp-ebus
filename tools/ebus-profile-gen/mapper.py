@@ -152,14 +152,12 @@ DATATYPE_SIZE: Dict[str, int] = {
     "CHAR4": 4, "HEX4": 4,
     # 5-8 bytes
     "CHAR5": 5, "HEX5": 5, "CHAR6": 6, "HEX6": 6, "CHAR7": 7, "HEX7": 7, "CHAR8": 8, "HEX8": 8,
-    # 9-21 bytes (ebusd defines these via @maxLength on STR/HEX).
-    # 9-16 are native (CHAR9-16/HEX9-16); 17-21 remain unsupported —
-    # the ebus-library max width is 16.
+    # 9-16 bytes (ebusd defines these via @maxLength on STR/HEX). The
+    # protocol caps NN at 16 data bytes (spec 5.6, max_data_bytes), so
+    # nothing wider than 16 can occur on the wire — no rows beyond this.
     "CHAR9": 9, "HEX9": 9, "CHAR10": 10, "HEX10": 10, "CHAR11": 11, "HEX11": 11,
     "CHAR12": 12, "HEX12": 12, "CHAR13": 13, "HEX13": 13, "CHAR14": 14, "HEX14": 14,
-    "CHAR15": 15, "HEX15": 15, "CHAR16": 16, "HEX16": 16, "CHAR17": 17, "HEX17": 17,
-    "CHAR18": 18, "HEX18": 18, "CHAR19": 19, "HEX19": 19, "CHAR20": 20, "HEX20": 20,
-    "CHAR21": 21, "HEX21": 21,
+    "CHAR15": 15, "HEX15": 15, "CHAR16": 16, "HEX16": 16,
 }
 
 # ebus-library native DataTypes it can actually decode/encode.
@@ -318,8 +316,9 @@ def _map_type(ebus_type: str, max_length: Optional[int] = None) -> str:
     """Map an eBUS TypeSpec type to our datatype string.
 
     For STR/HEX types the @maxLength decorator selects the exact CHAR/HEX
-    width (e.g. STR + maxLength(21) → CHAR21). The ebus-library only supports
-    up to CHAR16/HEX16; wider types are flagged as unsupported by the caller.
+    width (e.g. STR + maxLength(21) → CHAR21). The protocol allows at most
+    16 data bytes (spec 5.6, max_data_bytes) and the ebus-library implements
+    CHAR1-16 / HEX1-16; wider types are flagged as unsupported by the caller.
     """
     t = _strip_qualified(ebus_type)
     mapped = TYPE_MAP.get(t)
@@ -338,8 +337,9 @@ def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]
     Returns one of: native, profile, unsupported, defaulted.
 
     Classification is based on the mapped ebus-library datatype; CHAR/HEX
-    types wider than 16 bytes are unsupported because the ebus-library only
-    supports CHAR1-16 / HEX1-16.
+    types wider than 16 bytes are unsupported because the protocol allows
+    at most 16 data bytes (spec 5.6, max_data_bytes) — CHAR17+ cannot
+    occur on the wire.
     """
     t = _strip_qualified(ebus_type)
     d = _strip_qualified(datatype)
