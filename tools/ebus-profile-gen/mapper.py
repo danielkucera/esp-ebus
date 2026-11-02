@@ -88,6 +88,14 @@ TYPE_MAP: Dict[str, str] = {
     "CHAR6": "CHAR6",
     "CHAR7": "CHAR7",
     "CHAR8": "CHAR8",
+    "CHAR9": "CHAR9",
+    "CHAR10": "CHAR10",
+    "CHAR11": "CHAR11",
+    "CHAR12": "CHAR12",
+    "CHAR13": "CHAR13",
+    "CHAR14": "CHAR14",
+    "CHAR15": "CHAR15",
+    "CHAR16": "CHAR16",
     "HEX1": "HEX1",
     "HEX2": "HEX2",
     "HEX3": "HEX3",
@@ -96,6 +104,14 @@ TYPE_MAP: Dict[str, str] = {
     "HEX6": "HEX6",
     "HEX7": "HEX7",
     "HEX8": "HEX8",
+    "HEX9": "HEX9",
+    "HEX10": "HEX10",
+    "HEX11": "HEX11",
+    "HEX12": "HEX12",
+    "HEX13": "HEX13",
+    "HEX14": "HEX14",
+    "HEX15": "HEX15",
+    "HEX16": "HEX16",
     # Boolean/bit — no native BOOL DataType; boolean → UINT8
     "boolean": "UINT8",
     "BOOL": "UINT8",
@@ -136,8 +152,9 @@ DATATYPE_SIZE: Dict[str, int] = {
     "CHAR4": 4, "HEX4": 4,
     # 5-8 bytes
     "CHAR5": 5, "HEX5": 5, "CHAR6": 6, "HEX6": 6, "CHAR7": 7, "HEX7": 7, "CHAR8": 8, "HEX8": 8,
-    # 9-21 bytes (ebusd defines these via @maxLength on STR/HEX, but the
-    # ebus-library only supports up to CHAR8/HEX8 — these are unsupported)
+    # 9-21 bytes (ebusd defines these via @maxLength on STR/HEX).
+    # 9-16 are native (CHAR9-16/HEX9-16); 17-21 remain unsupported —
+    # the ebus-library max width is 16.
     "CHAR9": 9, "HEX9": 9, "CHAR10": 10, "HEX10": 10, "CHAR11": 11, "HEX11": 11,
     "CHAR12": 12, "HEX12": 12, "CHAR13": 13, "HEX13": 13, "CHAR14": 14, "HEX14": 14,
     "CHAR15": 15, "HEX15": 15, "CHAR16": 16, "HEX16": 16, "CHAR17": 17, "HEX17": 17,
@@ -161,6 +178,10 @@ SUPPORTED_DATATYPES: set = {
     "CHAR4", "HEX4",
     # 5-8 bytes
     "CHAR5", "HEX5", "CHAR6", "HEX6", "CHAR7", "HEX7", "CHAR8", "HEX8",
+    # 9-16 bytes
+    "CHAR9", "HEX9", "CHAR10", "HEX10", "CHAR11", "HEX11",
+    "CHAR12", "HEX12", "CHAR13", "HEX13", "CHAR14", "HEX14",
+    "CHAR15", "HEX15", "CHAR16", "HEX16",
 }
 
 # Mapping from ebusd-configuration scalar names to our datatypes
@@ -298,7 +319,7 @@ def _map_type(ebus_type: str, max_length: Optional[int] = None) -> str:
 
     For STR/HEX types the @maxLength decorator selects the exact CHAR/HEX
     width (e.g. STR + maxLength(21) → CHAR21). The ebus-library only supports
-    up to CHAR8/HEX8; wider types are flagged as unsupported by the caller.
+    up to CHAR16/HEX16; wider types are flagged as unsupported by the caller.
     """
     t = _strip_qualified(ebus_type)
     mapped = TYPE_MAP.get(t)
@@ -317,8 +338,8 @@ def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]
     Returns one of: native, profile, unsupported, defaulted.
 
     Classification is based on the mapped ebus-library datatype; CHAR/HEX
-    types wider than 8 bytes are unsupported because the ebus-library only
-    supports CHAR1-8 / HEX1-8.
+    types wider than 16 bytes are unsupported because the ebus-library only
+    supports CHAR1-16 / HEX1-16.
     """
     t = _strip_qualified(ebus_type)
     d = _strip_qualified(datatype)
@@ -329,7 +350,7 @@ def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]
             width = int(d[len(prefix):])
         except ValueError:
             width = 0
-        if width > 8:
+        if width > 16:
             return "unsupported"
     if t in TYPE_MAP:
         return "native"
@@ -444,6 +465,14 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "CHAR6": "char6",
         "CHAR7": "char7",
         "CHAR8": "char8",
+        "CHAR9": "char9",
+        "CHAR10": "char10",
+        "CHAR11": "char11",
+        "CHAR12": "char12",
+        "CHAR13": "char13",
+        "CHAR14": "char14",
+        "CHAR15": "char15",
+        "CHAR16": "char16",
         "HEX1": "hex1",
         "HEX2": "hex2",
         "HEX3": "hex3",
@@ -452,6 +481,14 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "HEX6": "hex6",
         "HEX7": "hex7",
         "HEX8": "hex8",
+        "HEX9": "hex9",
+        "HEX10": "hex10",
+        "HEX11": "hex11",
+        "HEX12": "hex12",
+        "HEX13": "hex13",
+        "HEX14": "hex14",
+        "HEX15": "hex15",
+        "HEX16": "hex16",
     }
     return basic_map.get(datatype, "uint8")
 
@@ -546,7 +583,7 @@ def profiles_to_flat_entries(
             unit = f.unit or ""
 
             # Skip datatypes the ebus-library cannot decode/encode.
-            # (e.g. CHAR9+, HEX9+, ERRORHISTORY, POWER, etc.)
+            # (e.g. CHAR17+, HEX17+, ERRORHISTORY, POWER, etc.)
             if datatype not in SUPPORTED_DATATYPES:
                 log.warn(
                     "profile",
