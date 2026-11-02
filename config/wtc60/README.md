@@ -2,15 +2,15 @@
 
 These files extend the command export from 2026-10-31 14:03:55. They use the
 same JSON array and compact, one-command-per-line layout as `../wtc25a/wtc25a.json`.
-Together they contain 93 commands, including 12 writable commands. Load the
+Together they contain 82 commands, including 12 writable commands. Load the
 boiler file and whichever heating circuits are present:
 
 | File | Contents | Commands | Writable |
 |---|---|---|---|
-| [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 15 | 0 |
-| [`wtc60-hc2.json`](wtc60-hc2.json) | Circuit 2 | 32 | 4 |
-| [`wtc60-hc3.json`](wtc60-hc3.json) | Circuit 3 | 34 | 4 |
-| [`wtc60-hc4.json`](wtc60-hc4.json) | Circuit 4 | 12 | 4 |
+| [`wtc60-boiler.json`](wtc60-boiler.json) | Shared boiler, outside and hot-water measurements | 10 | 0 |
+| [`wtc60-hc2.json`](wtc60-hc2.json) | Circuit 2 | 30 | 4 |
+| [`wtc60-hc3.json`](wtc60-hc3.json) | Circuit 3 | 32 | 4 |
+| [`wtc60-hc4.json`](wtc60-hc4.json) | Circuit 4 | 10 | 4 |
 
 Each file is independently uploadable. Keys are unique across the four files;
 the adapter merges them into one command set. There is no combined JSON file
@@ -18,7 +18,7 @@ to maintain alongside these definitions. Splitting the files does not reduce
 runtime memory when all circuits are loaded.
 
 | Circuit | WCM-FS read slave | WCM-FS write master | Mixer |
-|---|---|---|---|---|
+|---|---|---|---|
 | 2 | `75` | `70` | `51` |
 | 3 | `f5` | `f0` | `52` |
 | 4 | `1c` | `17` | `53` |
@@ -111,19 +111,25 @@ a selected time program alone does not tell you which operating level is active.
 The boiler commands decode the passive `500a` broadcast into status, operating
 phase, flags, temperatures, outside temperature and trend. The controller's
 `0507` telegrams decode demand, requested temperature, pressure, output degree
-and hot-water setpoint. `wtc_device_identification` exposes the fixed ASCII
-manufacturer marker and remaining identifier bytes from `f6 07 04 00`.
+and hot-water setpoint.
 `wtc_flow` and `wtc_flue` actively read boiler temperatures every 10 seconds;
 `wtc_dhw` and `wtc_outside` remain available as before.
 
-The 2026-11-01 log also contains `fe 07 04` broadcast identification frames and
-one `fe 07 00 09` bus-time frame. These are exposed as raw hex because the
-broadcast identification is not tied to a known device address, and the bus
-time payload's field offsets have not been verified for this frame. The
-payload-free `fe 07 ff 00` broadcast is decoded by `wtc_sign_of_life` as the
-standard eBUS sign-of-life message. It is a bus-wide definition, not specific
-to circuit 2; the source address (observed here as `0x70`) remains in the raw
-telegram.
+Standard eBUS services are not duplicated in these WTC-60 command files.
+The library already collects `0704` slave identification replies for the
+Devices page and implements the `07ff` sign-of-life response to an existence
+inquiry. After a device scan, check the Devices page for manufacturer, device
+ID, software version and hardware version. The standard identification layout
+starts with a one-byte manufacturer code followed by a five-character device
+ID; the manufacturer is not a five-character ASCII field.
+
+The captured `fe 07 04` identification broadcasts and `fe 07 00 09` bus-time
+frame are left to generic diagnostics. Their payloads need to be checked
+against the shared eBUS layouts before adding decoded definitions. Named
+logging for payload-free telegrams is a separate firmware feature; this
+configuration does not require a `command_manager` change. No additional
+Weishaupt-specific identification service comparable to Vaillant's `b509`
+identification requests has been established from these observations.
 
 The `500a` flag bytes are retained as hex: byte 3 bit 3 is flame, bits 4/5 are
 gas valves, bit 6 is pump and bit 7 is error; byte 4 bit 1 is summer/winter and
@@ -131,11 +137,10 @@ bit 7 is heating/DHW selection. The upstream definitions identify the remaining
 bits as unknown. Meanings and units for `0902`/`0903` parameter IDs are not
 assigned without a matching definition; observed raw values are retained below.
 
-The larger 2026-11-01 log also contains unlabelled `0902` reads and `0704`
-identification replies. The observed `0902` reads are exposed as raw UINT16
+The larger 2026-11-01 log also contains unlabelled `0902` reads.
+The observed `0902` reads are exposed as raw UINT16
 values under `*_mixer_parameter_*_raw` and `*_controller_parameter_*_raw`
-keys; their meanings and units are not known. Device identification replies are
-split into raw 8-byte and 2-byte hex fields. The boiler's `085003018b` response
+keys; their meanings and units are not known. The boiler's `085003018b` response
 is exposed as a raw 5-byte hex field. These entries preserve the observed data
 without presenting an unsupported semantic interpretation.
 
@@ -246,11 +251,14 @@ profiles are built in. Temperature fields use the built-in HA profiles
 `sensor_temperature` and `number_temperature`; no profile overlays are required.
 
 Each compact JSON file fits the 8192-byte HTTP body limit. Loading all four uses
-93 of the configured 96 command slots, 12 of 16 write slots, and 13 of 16
-field-override slots. Its unique keys, names and field names occupy 6355 bytes
-in the string pool on a fresh load. The `master` branch currently provides only
-2048 bytes, so this command set requires the separate StringPool-capacity
-increase to 8192 bytes. This WTC-60 change does not include that increase.
+82 of the configured 96 command slots, 12 of 16 write slots, and 13 of 16
+field-override slots. Its 185 unique keys, names and field names occupy 5522
+bytes, including terminating NUL bytes, in the string pool on a fresh load.
+The PR base (`30e16e82`) provides only 2048 bytes, so the complete command set
+requires a separate StringPool-capacity increase; 8192 bytes accommodates
+these strings. The buffer size is hardcoded in `include/system/string_pool.hpp`;
+increasing command-capacity flags in `platformio.ini` alone does not enlarge it.
+This WTC-60 change does not include the capacity increase.
 Additional commands and older names retained in the runtime pool also consume
 space; reboot after saving a replacement set if needed.
 
