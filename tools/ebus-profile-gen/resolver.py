@@ -3,14 +3,21 @@ from __future__ import annotations
 
 import os
 import re
-from typing import List, Set
+from typing import List, Optional, Set
 
 _IMPORT_RE = re.compile(r'^\s*import\s+"([^"]+)"\s*;?\s*$', re.MULTILINE)
 
+# Local TypeSpec library package providing constants (BROADCAST, ...) and
+# base scalars; mapped to its lib/types.tsp (no imports of its own).
+_TYPESPEC_IMPORT = "@ebusd/ebus-typespec"
+
 
 class IncludeResolver:
-    def __init__(self, ebusd_root: str):
+    def __init__(self, ebusd_root: str, typespec_root: Optional[str] = None):
         self.ebusd_root = os.path.abspath(ebusd_root)
+        self.typespec_root = (
+            os.path.abspath(typespec_root) if typespec_root else None
+        )
 
     def resolve(self, tsp_path: str) -> List[str]:
         """Resolve tsp_path and its transitive includes relative to ebusd_root.
@@ -53,6 +60,12 @@ class IncludeResolver:
             import_path = m.group(1)
             # Skip @library imports (not file paths)
             if import_path.startswith("@"):
+                if import_path == _TYPESPEC_IMPORT and self.typespec_root:
+                    self._walk(
+                        os.path.join(self.typespec_root, "lib", "types.tsp"),
+                        seen,
+                        order,
+                    )
                 continue
             # Resolve import relative to the including file's directory
             abs_import = os.path.normpath(os.path.join(file_dir, import_path))

@@ -96,7 +96,7 @@ def main() -> int:
         log_path = os.path.join(gen_dir, f"{tsp_stem}.conversion.jsonl")
     log = ConversionLog(path=log_path, level=args.log_level)
 
-    res = resolver.IncludeResolver(ebusd_root)
+    res = resolver.IncludeResolver(ebusd_root, ebus_typespec_root)
     try:
         files = res.resolve(tsp_rel)
     except FileNotFoundError as e:

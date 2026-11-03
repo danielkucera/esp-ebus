@@ -26,6 +26,7 @@ _REPO_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 _EBUSD_ROOT = os.path.join(_REPO_ROOT, "tools", "ebus-profile-gen", "ebusd-configuration")
+_TYPESPEC_ROOT = os.path.join(_REPO_ROOT, "tools", "ebus-profile-gen", "ebus-typespec")
 
 _failures: List[str] = []
 _checks = 0
@@ -33,7 +34,7 @@ _checks = 0
 
 def entries_for(tsp_rel: str) -> Dict[str, List[Dict[str, Any]]]:
     """Run the generate.py pipeline in-process and index entries by name."""
-    res = resolver.IncludeResolver(_EBUSD_ROOT)
+    res = resolver.IncludeResolver(_EBUSD_ROOT, _TYPESPEC_ROOT)
     files = res.resolve(tsp_rel)
     raw = tsp_parser.TspParser(files).parse()
     fam = mapper.build_profiles_and_commands(raw, log=NULL_LOG)
@@ -94,6 +95,25 @@ def expect_absent(
         _failures.append(str(exc))
 
 
+def expect_zz(
+    by_name: Dict[str, List[Dict[str, Any]]], name: str, zz_hex: str
+) -> None:
+    """Assert the destination byte for a command (archived ZZ column)."""
+    global _checks
+    _checks += 1
+    entries = by_name.get(name)
+    try:
+        assert entries, (
+            f"{name}: command missing (present: {sorted(by_name)})"
+        )
+        assert all(e.get("zz") == zz_hex for e in entries), (
+            f"{name}: expected zz={zz_hex!r}, got "
+            + str([e.get("zz") for e in entries])
+        )
+    except AssertionError as exc:
+        _failures.append(str(exc))
+
+
 def main() -> int:
     # hcmode_inc: @inherit chains, BI gate, no fabricated 0x0d.
     hcmode = entries_for("src/vaillant/hcmode_inc.tsp")
@@ -135,12 +155,16 @@ def main() -> int:
     expect(ehp, "clearerrorhistory", "", "b5030201")
     expect_absent(ehp, "set_mode", "BI bitfield gate (imported)")
 
-    # broadcast: b/wi write side shares the base tail.
+    # broadcast: b/wi write side shares the base tail; archived ZZ is FE
+    # (alias BROADCAST = Targets.broadcast resolves via union constants).
     broadcast = entries_for("src/vaillant/broadcast.tsp")
     expect(broadcast, "vdatetime", "b51600", "b51600")
     expect(broadcast, "outsidetemp", "b51601")
     expect(broadcast, "hwc_status", "b50527")
     expect(broadcast, "load", "b50506")
+    expect_zz(broadcast, "vdatetime", "fe")
+    expect_zz(broadcast, "outsidetemp", "fe")
+    expect_zz(hcmode, "date_time", "08")
 
     # 15.e7c: is-template + @ext variadic ids/wids.
     e7c = entries_for("src/vaillant/15.e7c.tsp")

@@ -43,6 +43,9 @@ _SCALAR_RE = re.compile(r"^\s*scalar\s+(\w+)\s+extends\s+([\w.]+)\s*;?\s*$")
 # Matches an enum: enum Name {
 _ENUM_RE = re.compile(r"^\s*enum\s+(\w+)\s*\{\s*$")
 
+# Matches a union: union Name {
+_UNION_RE = re.compile(r"^\s*union\s+(\w+)\s*\{\s*$")
+
 # Matches an enum entry: Key: value,
 _ENUM_ENTRY_RE = re.compile(r"^\s*(\w+)\s*:\s*(0x[0-9a-fA-F]+|\d+)\s*,?\s*$")
 
@@ -276,12 +279,32 @@ class TspParser:
                 continue
             all_file_contents.append((fpath, content))
             lines = _strip_comments(content.splitlines())
+            in_union: Optional[str] = None
+            union_depth = 0
             for i in range(len(lines)):
                 am = _ALIAS_RE.match(lines[i])
                 if am:
                     alias_name = am.group(1)
                     alias_value = am.group(2).strip()
                     aliases[alias_name] = alias_value
+                    continue
+                if in_union is None:
+                    um = _UNION_RE.match(lines[i])
+                    if um:
+                        in_union = um.group(1)
+                        union_depth = lines[i].count("{") - lines[i].count("}")
+                        if union_depth <= 0:
+                            in_union = None
+                    continue
+                union_depth += lines[i].count("{") - lines[i].count("}")
+                # Constant members (e.g. broadcast: 0xfe) become Type.member
+                # aliases so _resolve_constant can resolve `Targets.broadcast`;
+                # non-constant members (type refs, bare names) are ignored.
+                em = _ENUM_ENTRY_RE.match(lines[i])
+                if em:
+                    aliases[f"{in_union}.{em.group(1)}"] = em.group(2)
+                if union_depth <= 0:
+                    in_union = None
 
         # Second pass: parse all files with the complete alias map
         ir: Dict[str, Any] = {
@@ -446,6 +469,13 @@ class TspParser:
         ns_map: Optional[Dict[int, str]] = None,
     ) -> None:
         """Parse a list of preprocessed lines into the IR."""
+        # The local ebus-typespec package is included only so the first pass
+        # can harvest its constants (aliases/unions, e.g. BROADCAST). Its
+        # scalars mirror TYPE_MAP keys in mapper.py and must not enter the
+        # scalar registry (they would extend field-type chases into TypeSpec
+        # built-ins like plainTime that have no eBUS mapping).
+        if "ebus-typespec" in fpath.replace(os.sep, "/"):
+            return
         ns_map = ns_map or {}
         i = 0
         while i < len(lines):
