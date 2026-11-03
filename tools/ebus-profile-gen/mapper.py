@@ -303,6 +303,18 @@ _WRITABLE_TEMPLATES = {
     "ServiceUpdateRegister",
 }
 
+# eBUS bitfield types: BI0..BI7 are individual bits (ebus-typespec
+# `scalar BI0 extends boolean`), phase1..3 extend them, and plain boolean
+# fields are bit payloads too. The firmware command writer packs at most
+# 4 bytes per field and cannot emit these wire payloads faithfully, so any
+# command carrying one is dropped (resolved type "boolean"/"BOOL" as well
+# as the raw scalar names when the typespec library is not loaded).
+_BIT_GATED_EBUS_TYPES = frozenset(
+    {"boolean", "BOOL"}
+    | {f"BI{i}" for i in range(8)}
+    | {"phase1", "phase2", "phase3"}
+)
+
 
 def _strip_qualified(ebus_type: str) -> str:
     """Strip namespace qualification from a type name (Ebus.Num.UCH -> UCH)."""
@@ -699,35 +711,27 @@ def commands_to_flat_entries(
         meta = c.meta or {}
         namespace = meta.get("namespace", "")
         
-        # Get addressing from meta
-        # Command format: ZZ PB SB NN D1 D2 D3 (7 bytes)
-        # Where:
-        #   ZZ = destination address (from @zz or default 0x08)
-        #   PB = source address/MF (from MF alias via @base decorator)
-        #   SB = primary command (from @base second arg)
-        #   NN = 0x03 for read, 0x04 for write
-        #   D1 = secondary command (from @base third arg or default 0x0d for read)
-        #   D2 = extension PB (from @ext first arg)
-        #   D3 = extension SB (from @ext second arg)
+        # Get addressing from meta.
+        # Command layout: ZZ + id, where id = PB SB D... (2..6 bytes).
+        # The D tail comes from the parser-resolved read_tail/write_tail
+        # (@base D bytes + inherited ancestors, never a fabricated 0x0d)
+        # followed by the model's own @ext bytes.
         zz = meta.get("zz", 0x08)  # Default ZZ
-        mf = meta.get("mf", default_mf)  # Default MF (should come from @base decorator with MF alias)
-        pb = meta.get("pb", 0x09)  # Default PB
-        
-        # SB values: from @base or @ext
-        sb_read = meta.get("sb", 0x0d)  # Default SB for read
-        sb_write = meta.get("sb_write", meta.get("sb", 0x0e))  # SB for write
-        
-        # Extension bytes from @ext decorator
-        ext_pb = meta.get("ext_pb", 0x00)
-        ext_sb = meta.get("ext_sb", 0x00)
-    
-        # NN bytes: ZZ PB SB NN D1 D2 D3 [data...]
-        #   NN = number of bytes after NN = 1 (D1) + 2 (D2+D3 addr) + data_byte_count
-        #   NN = 3 + data_byte_count
+        mf = meta.get("mf", default_mf)  # Default MF (PB byte, e.g. 0xb5)
+        pb = meta.get("pb", 0x09)  # Default SB
+
+        read_tail = meta.get("read_tail")
+        write_tail = meta.get("write_tail")
+        ext_bytes = list(meta.get("ext") or [])
+
+        def _hex(bs: List[int]) -> str:
+            return "".join(f"{b:02x}" for b in bs)
+
+        # NN bytes: ZZ PB SB NN D... [data...]
         #   read  NN typically 0x03 (no data)
         #   write NN = 3 + sum of datatype sizes of the writable field(s).
         nn_read = meta.get("read_nn", 0x03)
-    
+
         data_byte_count = 0
         if c.fields:
             for f in c.fields:
@@ -735,21 +739,29 @@ def commands_to_flat_entries(
                 if dt in SUPPORTED_DATATYPES:
                     data_byte_count += DATATYPE_SIZE.get(dt, 0)
         nn_write = meta.get("write_nn", 3 + data_byte_count)
-    
+
         # Compact schema: zz + id (read) / wid (write); NN is derived at
-        # runtime from the id length. Legacy example read 08b509030d9a00
-        # becomes zz=08, id=b5090d9a00 (PB SB D1 D2 D3, NN=03=len(id)-2).
+        # runtime from the id length. id/wid are empty when the command
+        # has no read/write side (write-only commands carry wid only).
+        # The SB byte (pb) is per-direction: read and write parents may
+        # use different PBSB (e.g. *r B504 19 / *w B505 2e).
         zz_hex = f"{zz:02x}"
-        id_hex = f"{mf:02x}{pb:02x}{sb_read:02x}{ext_pb:02x}{ext_sb:02x}"
-        # Write id only when writable; runtime NN = len(wid)-2 + value bytes.
+        mf_hex = f"{mf:02x}"
+        read_prefix = f"{mf_hex}{meta.get('read_pb', pb):02x}"
+        write_prefix = f"{mf_hex}{meta.get('write_pb', pb):02x}"
+        id_hex = (
+            read_prefix + _hex(read_tail) + _hex(ext_bytes)
+            if read_tail is not None
+            else ""
+        )
         wid_hex = (
-            f"{mf:02x}{pb:02x}{sb_write:02x}{ext_pb:02x}{ext_sb:02x}"
-            if c.rw == "write"
+            write_prefix + _hex(write_tail) + _hex(ext_bytes)
+            if write_tail is not None
             else ""
         )
         # Explicit read NN only when it differs from the derived len(id)-2
-        # (the read tail is always 3 bytes, NN defaults to 0x03).
-        nn_hex = f"{nn_read:02x}" if nn_read != 3 else ""
+        # and the command actually has a read side.
+        nn_hex = f"{nn_read:02x}" if (nn_read != 3 and id_hex) else ""
     
         if c.rw == "write" and "write_nn" not in meta:
             log.debug(
@@ -840,8 +852,9 @@ def commands_to_flat_entries(
 
         # Deduplicate namespace collisions: same model in multiple namespaces
         # produces identical zz+id + fields. Keep all variants but log them
-        # so the user can curate by hardware/software version.
-        read_key = zz_hex + id_hex
+        # so the user can curate by hardware/software version. Write-only
+        # commands carry no id, so fall back to wid for the key.
+        read_key = zz_hex + (id_hex or wid_hex)
         duplicate = seen_read_id.get(read_key)
         if duplicate is not None:
             log.debug(
@@ -853,6 +866,7 @@ def commands_to_flat_entries(
                 namespace=namespace,
                 zz=zz_hex,
                 id=id_hex,
+                wid=wid_hex,
                 collides_with=duplicate,
             )
         else:
@@ -1215,29 +1229,41 @@ def build_profiles_and_commands(
                 )
                 field_irs.append(field_ir)
 
-        # Determine if command is writable.
-        # Rules (in priority order):
-        #   1. @passive decorator  -> read-only (forces read, even for writable templates)
-        #   2. @write decorator    -> writable
-        #   3. writable template   -> writable (WriteRegister, InstallRegister, ...)
-        #   4. otherwise           -> read-only
-        explicit_passive = bool(meta.get("explicit_passive"))
-        explicit_write = bool(meta.get("explicit_write"))
-        if explicit_passive:
+        # Determine the command's direction from the parser-resolved id
+        # tails: a write side exists when write_tail was seeded/inherited,
+        # a read side when read_tail was. Decorator/template rules only
+        # remain as a fallback for registers with no resolved sides.
+        read_tail = meta.get("read_tail")
+        write_tail = meta.get("write_tail")
+        if write_tail is not None:
+            rw = "write"
+        elif read_tail is not None:
             rw = "read"
-        elif explicit_write:
-            rw = "write"
-        elif template_name in _WRITABLE_TEMPLATES:
-            rw = "write"
         else:
-            rw = "read"
+            rw = reg.get("rw", "read")
 
         unsupported = False
         unsupported_reason = ""
 
+        if reg.get("unsupported"):
+            unsupported = True
+            unsupported_reason = reg.get(
+                "unsupported_reason", "unsupported register"
+            )
+
         if rw not in ("read", "write"):
             unsupported = True
             unsupported_reason = f"unknown rw direction: {rw}"
+
+        # BI bitfield gate: the wire payload cannot be emitted faithfully
+        # (see _BIT_GATED_EBUS_TYPES) - drop the whole command.
+        for f in field_irs:
+            if f.ebus_type in _BIT_GATED_EBUS_TYPES:
+                unsupported = True
+                unsupported_reason = (
+                    f"BI bitfield field {f.name!r} (type {f.ebus_type!r})"
+                )
+                break
 
         writable = rw == "write"
         log.debug(
@@ -1248,8 +1274,8 @@ def build_profiles_and_commands(
             namespace=reg.get("namespace", ""),
             rw=rw,
             template=template_name,
-            explicit_write=explicit_write,
-            explicit_passive=explicit_passive,
+            explicit_write=bool(meta.get("explicit_write")),
+            explicit_passive=bool(meta.get("explicit_passive")),
         )
 
         cmd_ir = CommandIR(
@@ -1270,13 +1296,24 @@ def build_profiles_and_commands(
         else:
             kind = "register"
 
-        # Only concrete registers become commands; skip template definitions
-        # and inherited base models.
-        if kind == "register":
+        # Only concrete registers become commands; skip template definitions,
+        # inherited base models, and registers the merge/BI gate marked
+        # unsupported (no id/wid side or bitfield payload).
+        if kind == "register" and not unsupported:
             fam.commands.append(cmd_ir)
 
         # Log what happened to this register.
-        if kind == "template_definition":
+        if kind == "register" and unsupported:
+            log.warn(
+                "command",
+                "register skipped: unsupported",
+                action="skipped_unsupported",
+                name=reg_name,
+                namespace=reg.get("namespace", ""),
+                kind=kind,
+                cause=unsupported_reason,
+            )
+        elif kind == "template_definition":
             log.warn(
                 "command",
                 "template definition skipped (only instantiations become commands)",

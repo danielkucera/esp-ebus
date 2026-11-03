@@ -73,7 +73,7 @@ By default the CLI writes raw generated output to `tools/ebus-profile-gen/genera
 - `<tsp_stem>.json` — command entries matching `config/simulation.json` schema:
   `{key, name, zz, id, [nn], wid, interval, master, fields: [{name, profile, position, ha_profile}]}`.
   `wid` is omitted for read-only commands, `interval` defaults to 0 (passive only), `master` defaults to false, `ha_profile` is empty — fill these in by hand.
-  `zz` is the destination byte; `id` is the read id `PB SB Dx...` (2-6 bytes) and the read NN is derived as `len(id)-2` unless an explicit `nn` override is given; `wid` is the write id with the same layout (the runtime NN also counts the appended value bytes).
+  `zz` is the destination byte; `id` is the read id `PB SB Dx...` and `wid` the write id with the same layout, each 2-6 bytes. The `Dx...` tail is the resolved `@base`/`@inherit` D bytes plus the model's own `@ext` bytes (no default `0x0d` is invented); read NN is derived as `len(id)-2` unless an explicit `nn` override is given (the runtime write NN also counts the appended value bytes). Write-only commands have an empty `id` (`""`) and carry the addressing in `wid` alone.
   `key` is prefixed (default: derived from tsp filename, e.g. `08.ehp.tsp` → `ehp_8d`).
   Use `--key-prefix` to override the default prefix.
 
@@ -204,7 +204,18 @@ top warnings to stderr, with the full detail in the JSONL file.
 Use `--log-level warn` to suppress debug noise, `--no-log` to skip writing the
 file, or `--log <path>` to override the location. Validation (`--validate`)
 fails on defaulted/unsupported type mappings, emitted template definitions,
-zz+id collisions, writable commands without a `wid`, referenced
-profiles that do not exist, and trailing underscores — treating the generator
-output as ready to use only when none of those are present.
+zz+id collisions, commands with neither an `id` nor a `wid` (or an `id`/`wid`
+outside the 2-6 byte range), referenced profiles that do not exist, and
+trailing underscores — treating the generator output as ready to use only when
+none of those are present.
+
+## Testing
+
+`test_golden_ids.py` runs the full resolve→parse→map pipeline in-process and
+asserts representative command ids/wids against the archived eBUS ground
+truth (concatenation model, BI gate, write-only `id: ""`):
+
+```bash
+python3 tools/ebus-profile-gen/test_golden_ids.py
+```
 

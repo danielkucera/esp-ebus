@@ -987,7 +987,8 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
         std::string_view hex = r.value();
         // Character counts: zz/nn = 1 byte; id/wid = 2..6 bytes;
         // read_cmd/write_cmd = 4..8 wire bytes (ZZ PB SB NN + <=4 D);
-        // write-side fields may be empty (not writable).
+        // write-side fields may be empty (not writable) and id may be
+        // empty (write-only command).
         size_t min_chars = 0, max_chars = 0;
         if (key == "zz" || key == "nn") {
           min_chars = max_chars = 2;
@@ -998,8 +999,9 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
           min_chars = 8;
           max_chars = 16;
         }
-        if (hex.empty() && (key == "write_cmd" || key == "wid")) {
-          // Optional write side left empty: command is read-only.
+        if (hex.empty() &&
+            (key == "write_cmd" || key == "wid" || key == "id")) {
+          // Optional side left empty: read-only (wid) or write-only (id).
         } else if (hex.length() < min_chars || hex.length() > max_chars ||
                    hex.length() % 2 != 0) {
           snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),

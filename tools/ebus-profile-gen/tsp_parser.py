@@ -299,36 +299,141 @@ class TspParser:
             ns_map = _namespace_map(lines)
             self._parse_lines(lines, ir, fpath, aliases, ns_map)
 
-        # Post-process: resolve @inherit chains
-        # Build model name → register index map
-        model_index: Dict[str, int] = {}
+        # Post-process: resolve @inherit chains and derive per-direction
+        # id/wid tails. read_tail/write_tail hold the D bytes contributed
+        # by @base and inherited ancestors; a register's own @ext bytes
+        # are appended by the mapper at emission time.
+        by_name: Dict[str, List[int]] = {}
         for idx, reg in enumerate(ir["registers"]):
-            model_index[reg["name"]] = idx
+            by_name.setdefault(reg["name"], []).append(idx)
 
-        def merge_meta(child: Dict[str, Any], parent: Dict[str, Any]) -> None:
-            """Copy missing meta components from parent to child."""
-            for k in ("zz", "mf", "pb", "sb", "ext_pb", "ext_sb"):
-                if k not in child["meta"] and k in parent["meta"]:
-                    child["meta"][k] = parent["meta"][k]
+        def resolve_parent(
+            child: Dict[str, Any], parent_name: str
+        ) -> Optional[Dict[str, Any]]:
+            """Locate a parent register for @inherit resolution.
 
-        # Resolve inheritance iteratively (handles chains)
-        # Keep iterating until no more meta is copied (handles chains
-        # where parent is defined after child in the file list)
+            Model names may collide across files (e.g. wi_1 in hcmode_inc,
+            iotesthp_inc and errors_inc all define one), so prefer a unique
+            global match, then the child's namespace, then the child's
+            file, and finally the first match with a warning.
+            """
+            matches = by_name.get(parent_name)
+            if not matches:
+                return None
+            if len(matches) == 1:
+                return ir["registers"][matches[0]]
+            ns = child.get("namespace", "")
+            same_ns = [
+                i for i in matches
+                if ir["registers"][i].get("namespace") == ns
+            ]
+            pool = same_ns or matches
+            if len(pool) == 1:
+                return ir["registers"][pool[0]]
+            same_file = [
+                i for i in pool
+                if ir["registers"][i].get("file") == child.get("file")
+            ]
+            if same_file:
+                return ir["registers"][same_file[0]]
+            self.log.warn(
+                "parse",
+                "ambiguous @inherit parent; using first match",
+                model=child.get("name"),
+                parent=parent_name,
+                line=child.get("line"),
+            )
+            return ir["registers"][pool[0]]
+
+        # Seed id/wid tails from each register's own @base / direction.
+        # No @base and no parents: keep an empty tail so the command still
+        # gets a prefix-only id or wid (never a fabricated 0x0d).
+        # read_pb/write_pb carry the SB byte of the side's own @base: read
+        # and write parents may use different PBSB (e.g. tempsetpoints
+        # *r B504 19 / *w B505 2e), so the prefix is per-direction.
+        for reg in ir["registers"]:
+            meta = reg["meta"]
+            base_tail = meta.get("base_tail")
+            passive = bool(meta.get("explicit_passive"))
+            if base_tail is not None:
+                own_pb = meta.get("pb")
+                if reg.get("rw") == "write":
+                    meta["write_tail"] = list(base_tail)
+                    if own_pb is not None:
+                        meta["write_pb"] = own_pb
+                    if passive:
+                        # @write @passive (ebusd *uw): same bytes are also
+                        # readable, but only passively (lower priority).
+                        meta["read_tail"] = list(base_tail)
+                        meta["read_prio"] = 1
+                        if own_pb is not None:
+                            meta["read_pb"] = own_pb
+                else:
+                    meta["read_tail"] = list(base_tail)
+                    meta["read_prio"] = 1 if passive else 0
+                    if own_pb is not None:
+                        meta["read_pb"] = own_pb
+            elif not (reg.get("inherit") or []):
+                if reg.get("rw") == "write":
+                    meta["write_tail"] = []
+                else:
+                    meta["read_tail"] = []
+                    meta["read_prio"] = 1 if passive else 0
+
+        # Resolve inheritance iteratively (handles chains and parents that
+        # are defined after their children in the file list). Active reads
+        # (prio 0) beat passive reads (prio 1); the first write parent wins.
         changed = True
         while changed:
             changed = False
             for reg in ir["registers"]:
                 inherit_list = reg.get("inherit") or []
+                if not inherit_list:
+                    continue
+                meta = reg["meta"]
                 for parent_name in inherit_list:
-                    parent_idx = model_index.get(parent_name)
-                    if parent_idx is None:
+                    parent = resolve_parent(reg, parent_name)
+                    if parent is None:
                         continue
-                    parent = ir["registers"][parent_idx]
-                    # Copy missing meta from parent
-                    for k in ("zz", "mf", "pb", "sb", "ext_pb", "ext_sb"):
-                        if k not in reg["meta"] and k in parent["meta"]:
-                            reg["meta"][k] = parent["meta"][k]
+                    pmeta = parent["meta"]
+                    # zz/mf/pb form the shared addressing prefix.
+                    for k in ("zz", "mf", "pb"):
+                        if k not in meta and k in pmeta:
+                            meta[k] = pmeta[k]
                             changed = True
+                    # Read side: fold the parent's own @ext into the tail.
+                    if "read_tail" in pmeta:
+                        cand = list(pmeta["read_tail"]) + list(
+                            pmeta.get("ext") or []
+                        )
+                        prio = pmeta.get("read_prio", 0)
+                        if "read_tail" not in meta or prio < meta.get(
+                            "read_prio", 99
+                        ):
+                            meta["read_tail"] = cand
+                            meta["read_prio"] = prio
+                            if "read_pb" in pmeta:
+                                meta["read_pb"] = pmeta["read_pb"]
+                            changed = True
+                    # Write side: first write parent wins.
+                    if "write_tail" in pmeta and "write_tail" not in meta:
+                        meta["write_tail"] = list(pmeta["write_tail"]) + list(
+                            pmeta.get("ext") or []
+                        )
+                        if "write_pb" in pmeta:
+                            meta["write_pb"] = pmeta["write_pb"]
+                        changed = True
+
+        for reg in ir["registers"]:
+            meta = reg["meta"]
+            # Own @write with read-only parents still gets a write side.
+            if reg.get("rw") == "write" and "write_tail" not in meta:
+                meta["write_tail"] = []
+            if "read_tail" not in meta and "write_tail" not in meta:
+                reg["unsupported"] = True
+                reg["unsupported_reason"] = (
+                    "no read/write id resolved from @inherit"
+                )
 
         return ir
 
@@ -493,6 +598,11 @@ class TspParser:
                     )
                     reg['template'] = template_name
                     reg['template_type'] = type_param
+                    # Flatten `is Template<T>` into an @inherit parent so
+                    # the template's resolved id/wid tails propagate.
+                    reg['inherit'] = list(reg.get('inherit') or []) + [
+                        template_name
+                    ]
                     reg['fields'] = self._template_fields(template_name, type_param, ir, aliases)
                     ir['registers'].append(reg)
                     i += 1
@@ -706,6 +816,11 @@ class TspParser:
                 )
                 reg["template"] = template_name
                 reg["template_type"] = type_param
+                # Flatten `is Template<T>` into an @inherit parent so the
+                # template's resolved id/wid tails propagate.
+                reg["inherit"] = list(reg.get("inherit") or []) + [
+                    template_name
+                ]
                 reg["fields"] = self._template_fields(
                     template_name, type_param, ir, aliases
                 )
@@ -899,7 +1014,9 @@ class TspParser:
                     if val is not None:
                         register["meta"]["zz"] = val
             elif dname == "base":
-                # base(pb, sb) or base(mf, pb, sb)
+                # base(pb, sb) or base(mf, pb, sb, ...dd): bytes after sb
+                # are D-tail bytes ($base(pb, sb, ...dd) in decorators.ts);
+                # there is no default 0x0d read byte.
                 if len(args) >= 3:
                     mf = _resolve_constant(args[0], aliases)
                     pb = _resolve_constant(args[1], aliases)
@@ -910,6 +1027,12 @@ class TspParser:
                         register["meta"]["pb"] = pb
                     if sb is not None:
                         register["meta"]["sb"] = sb
+                    tail: List[int] = []
+                    for a in args[2:]:
+                        v = _resolve_constant(a, aliases)
+                        if v is not None:
+                            tail.append(v)
+                    register["meta"]["base_tail"] = tail
                 elif len(args) == 2:
                     mf = _resolve_constant(args[0], aliases)
                     pb = _resolve_constant(args[1], aliases)
@@ -917,15 +1040,17 @@ class TspParser:
                         register["meta"]["mf"] = mf
                     if pb is not None:
                         register["meta"]["pb"] = pb
+                    register["meta"]["base_tail"] = []
             elif dname == "ext":
-                # ext(pb, sb)
-                if len(args) >= 2:
-                    pb = _resolve_constant(args[0], aliases)
-                    sb = _resolve_constant(args[1], aliases)
-                    if pb is not None:
-                        register["meta"]["ext_pb"] = pb
-                    if sb is not None:
-                        register["meta"]["ext_sb"] = sb
+                # ext(dd...): variadic D-tail bytes appended after the
+                # base/inherited tail ($ext(...dd) in decorators.ts).
+                ext_bytes: List[int] = []
+                for a in args:
+                    v = _resolve_constant(a, aliases)
+                    if v is not None:
+                        ext_bytes.append(v)
+                if ext_bytes:
+                    register["meta"]["ext"] = ext_bytes
             elif dname == "inherit":
                 # inherit(parent_model, ...)
                 if args:
@@ -940,15 +1065,17 @@ class TspParser:
                 if id_bytes:
                     register["register"] = "".join(f"{b:02x}" for b in id_bytes)
             elif dname == "write":
+                # The write D1 comes from the direction parent's base tail
+                # (or this model's own @base), never a hardcoded 0x0e.
                 register["rw"] = "write"
-                register["meta"]["sb_write"] = 0x0e
                 register["meta"]["explicit_write"] = True
                 if args:
                     v = _resolve_constant(args[0], aliases)
                     if v is not None:
                         register["meta"]["write_nn"] = v
             elif dname == "passive":
-                register["rw"] = "read"
+                # Does not force rw: a @write @passive base (*uw) stays
+                # writable and additionally gets a passive read side.
                 register["meta"]["explicit_passive"] = True
             elif dname == "poll":
                 if args:

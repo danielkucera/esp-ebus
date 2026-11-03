@@ -86,10 +86,33 @@ def validate_log(
 
         if action == "emitted" and rec.get("zz") is not None:
             id_hex = rec.get("id", "")
-            if not (4 <= len(id_hex) <= 12 and len(id_hex) % 2 == 0):
+            wid_hex = rec.get("wid", "")
+
+            def _wid_ok(h: str) -> bool:
+                return 4 <= len(h) <= 12 and len(h) % 2 == 0
+
+            if not id_hex and not wid_hex:
+                issues.append(
+                    f"[{stage}] command has neither id nor wid: "
+                    f"{rec.get('name')!r}"
+                )
+            elif not id_hex:
+                # Write-only command: id is empty by design, wid carries
+                # the addressing and must obey the 2..6 byte rule.
+                if not _wid_ok(wid_hex):
+                    issues.append(
+                        f"[{stage}] wid must be 2..6 bytes: "
+                        f"{rec.get('name')!r} ({wid_hex!r})"
+                    )
+            elif not (4 <= len(id_hex) <= 12 and len(id_hex) % 2 == 0):
                 issues.append(
                     f"[{stage}] id must be 2..6 bytes: "
                     f"{rec.get('name')!r} ({id_hex!r})"
+                )
+            if wid_hex and not _wid_ok(wid_hex):
+                issues.append(
+                    f"[{stage}] wid must be 2..6 bytes: "
+                    f"{rec.get('name')!r} ({wid_hex!r})"
                 )
 
     if profiles_entries is not None and commands_entries is not None:
