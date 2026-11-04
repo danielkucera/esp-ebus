@@ -692,27 +692,30 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
           if (field_token != ebus::detail::JsonReader::Token::object_start)
             break;
           command_types::FieldRef field;
-          r.forEachField([&](std::string_view fkey,
-                             ebus::detail::JsonReader& fr) -> bool {
-            fr.next();
-            if (fkey == "name")
-              field.name_id = StringPool::instance().intern(fr.value());
-            else if (fkey == "profile") {
-              const DataProfile* p = findDataProfile(fr.value());
-              field.profile_idx = p ? getProfileIndex(p) : 0;
-            } else if (fkey == "position")
-              field.position = static_cast<uint8_t>(fr.asNum<size_t>() & 0x0F);
-            else if (fkey == "ha_profile") {
-              const HAProfile* p = findHAProfile(fr.value());
-              field.ha_profile_idx = p ? getHaProfileIndex(p) : 0;
-            } else if (fkey == "raw")
-              field.raw = fr.asBool();
-            else if (fkey == "min")
-              pending_min[command.fields_.size()] = fr.asNum<float>();
-            else if (fkey == "max")
-              pending_max[command.fields_.size()] = fr.asNum<float>();
-            return true;
-          });
+          r.forEachField(
+              [&](std::string_view fkey, ebus::detail::JsonReader& fr) -> bool {
+                fr.next();
+                if (fkey == "name")
+                  field.name_id = StringPool::instance().intern(fr.value());
+                else if (fkey == "profile") {
+                  const DataProfile* p = findDataProfile(fr.value());
+                  field.profile_idx = p ? getProfileIndex(p) : 0;
+                } else if (fkey == "position")
+                  // Byte offset in the payload (1..NN); no nibble mask —
+                  // position 16 is legal (NN=16) and 0 means "unset" (defaults
+                  // to 1).
+                  field.position = static_cast<uint8_t>(fr.asNum<size_t>());
+                else if (fkey == "ha_profile") {
+                  const HAProfile* p = findHAProfile(fr.value());
+                  field.ha_profile_idx = p ? getHaProfileIndex(p) : 0;
+                } else if (fkey == "raw")
+                  field.raw = fr.asBool();
+                else if (fkey == "min")
+                  pending_min[command.fields_.size()] = fr.asNum<float>();
+                else if (fkey == "max")
+                  pending_max[command.fields_.size()] = fr.asNum<float>();
+                return true;
+              });
           command.fields_.push_back(field);
         }
       }
@@ -857,8 +860,7 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
                 const DataProfile* p = findDataProfile(fr.value());
                 field.profile_idx = p ? getProfileIndex(p) : 0;
               } else if (fkey == "position")
-                field.position =
-                    static_cast<uint8_t>(fr.asNum<size_t>() & 0x0F);
+                field.position = static_cast<uint8_t>(fr.asNum<size_t>());
               else if (fkey == "ha_profile") {
                 const HAProfile* p = findHAProfile(fr.value());
                 field.ha_profile_idx = p ? getHaProfileIndex(p) : 0;
@@ -1048,6 +1050,15 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
             snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
                      "Expected object in fields array at index %d",
                      field_index);
+            error = command_eval_error_buf;
+            break;
+          }
+          if (field_index >= static_cast<int>(command_types::max_fields)) {
+            // fromJson() would silently drop overflow fields (StaticVector);
+            // reject the whole command instead of loading it truncated.
+            snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
+                     "Too many fields: %d exceeds limit of %u", field_index,
+                     static_cast<unsigned>(command_types::max_fields));
             error = command_eval_error_buf;
             break;
           }

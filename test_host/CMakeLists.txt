@@ -62,6 +62,7 @@ target_compile_definitions(host_test_settings INTERFACE
     EBUS_CRON_FILE_PATH="${CMAKE_CURRENT_BINARY_DIR}/cron_api_test.json"
     EBUS_COMMANDS_FILE_PATH="${CMAKE_CURRENT_BINARY_DIR}/commands_api_test.json"
     EBUS_COMMANDS_TMP_FILE_PATH="${CMAKE_CURRENT_BINARY_DIR}/commands_api_upload_test.json"
+    COMMAND_MAX_FIELDS=13
 )
 target_link_libraries(host_test_settings INTERFACE ebus)
 
