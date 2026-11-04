@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Golden id/wid assertions for the ebus-profile generator.
+"""Golden id/wid/position assertions for the ebus-profile generator.
 
 Verifies resolved read/write addressing of representative commands against
 the archived ebusd CSV ground truth (concatenation model: template PBSB +
-base D bytes + member ext), the BI bitfield gate, and write-only commands
-with an empty id. Run from the repo root:
+base D bytes + member ext), the BI bitfield gate, write-only commands
+with an empty id, 1-based byte positions of fields, and composite expansion
+field shapes (plain models → positioned leaves, bitfields → scalar). Run
+from the repo root:
 
     python3 tools/ebus-profile-gen/test_golden_ids.py
 """
@@ -114,6 +116,50 @@ def expect_zz(
         _failures.append(str(exc))
 
 
+def expect_positions(
+    by_name: Dict[str, List[Dict[str, Any]]], name: str, positions: List[int]
+) -> None:
+    """Assert 1-based byte positions of a command's fields.
+
+    Positions are data-part byte offsets (firmware: field_pos = position-1),
+    so successors of a multi-byte field shift accordingly.
+    """
+    global _checks
+    _checks += 1
+    entries = by_name.get(name)
+    try:
+        assert entries, (
+            f"{name}: command missing (present: {sorted(by_name)})"
+        )
+        for e in entries:
+            got = [f["position"] for f in e["fields"]]
+            assert got == positions, (
+                f"{name}: expected positions={positions}, got {got}"
+            )
+    except AssertionError as exc:
+        _failures.append(str(exc))
+
+
+def expect_fields(
+    by_name: Dict[str, List[Dict[str, Any]]], name: str, field_names: List[str]
+) -> None:
+    """Assert the exact field-name list of a command (expansion shape)."""
+    global _checks
+    _checks += 1
+    entries = by_name.get(name)
+    try:
+        assert entries, (
+            f"{name}: command missing (present: {sorted(by_name)})"
+        )
+        for e in entries:
+            got = [f["name"] for f in e["fields"]]
+            assert got == field_names, (
+                f"{name}: expected fields={field_names}, got {got}"
+            )
+    except AssertionError as exc:
+        _failures.append(str(exc))
+
+
 def main() -> int:
     # hcmode_inc: @inherit chains, BI gate, no fabricated 0x0d.
     hcmode = entries_for("src/vaillant/hcmode_inc.tsp")
@@ -175,6 +221,37 @@ def main() -> int:
     t392 = entries_for("src/vaillant/15.392.tsp")
     expect(t392, "cc_timer__monday", "b5150002", "b5150002")
     expect(t392, "setpoints__monday", "b5041901", "b5052e01")
+
+    # Byte positions: 1-based data-part offsets, not field ordinals —
+    # successors of multi-byte fields shift (char3@2 → char4@5 → d2b@9).
+    expect_positions(hcmode, "date_time", [1, 2, 5, 9])
+    expect_positions(broadcast, "vdatetime", [1, 4])
+    expect_positions(e7c, "monday_heating_temp", [1, 3, 5, 7, 9, 11, 13])
+
+    # Composite expansion: plain models become positioned leaf sub-fields
+    # (full field path joined with '_'), bitfield models fall back to the
+    # scalar field so the BI gate never fires on them.
+    expect_fields(
+        errors, "currenterror",
+        ["value_error", "value_error_1", "value_error_2",
+         "value_error_3", "value_error_4"],
+    )
+    expect_positions(errors, "currenterror", [1, 3, 5, 7, 9])
+    expect_fields(
+        errors, "errorhistory",
+        ["index", "errorhistory_status", "errorhistory_time",
+         "errorhistory_date", "errorhistory_error"],
+    )
+    expect_positions(errors, "errorhistory", [1, 2, 3, 5, 8])
+    expect_fields(
+        t392, "cc_timer__monday",
+        ["value_slot1_slot_from", "value_slot1_slot_to",
+         "value_slot1_slot_1_from", "value_slot1_slot_1_to",
+         "value_slot1_slot_2_from", "value_slot1_slot_2_to",
+         "value_daysel"],
+    )
+    expect_positions(t392, "cc_timer__monday", [1, 2, 3, 4, 5, 6, 7])
+    expect_fields(ehp, "phase_status", ["value"])
 
     if _failures:
         print(f"FAIL: {_failures.__len__()}/{_checks} checks failed")

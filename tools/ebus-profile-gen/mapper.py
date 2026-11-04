@@ -469,6 +469,15 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "INT16": "int16",
         "INT32": "int32",
         "FLOAT4": "float4",
+        "UINT16R": "uint16r",
+        "INT16R": "int16r",
+        "UINT32R": "uint32r",
+        "INT32R": "int32r",
+        "FLOAT4R": "float4r",
+        "BCD": "bcd",
+        "BOOL": "bool",
+        "DATA2BR": "data2br",
+        "DATA2CR": "data2cr",
         "CHAR1": "char1",
         "CHAR2": "char2",
         "CHAR3": "char3",
@@ -796,9 +805,12 @@ def commands_to_flat_entries(
         if key_prefix:
             key = f"{key_prefix}{key}"
         
-        # Build fields with 1-based position
+        # Build fields with 1-based byte positions: position = 1 + cumulative
+        # byte offset of preceding datatype sizes (firmware uses
+        # field_pos = position - 1 to index into the data part).
         fields: List[Dict[str, Any]] = []
-        for pos, f in enumerate(c.fields, start=1):
+        byte_offset = 0
+        for f in c.fields:
             # Get the profile name based on type and unit
             profile = _map_profile_name(f.ebus_type, f.unit or "", _max_length_from_meta(f.meta))
             
@@ -809,7 +821,7 @@ def commands_to_flat_entries(
             field_entry = {
                 "name": f.name,
                 "profile": profile,
-                "position": pos,
+                "position": byte_offset + 1,
                 "ha_profile": "",
             }
             
@@ -820,6 +832,21 @@ def commands_to_flat_entries(
                 field_entry["max"] = max_val
             
             fields.append(field_entry)
+            
+            datatype = f.our_datatype or _map_type(
+                f.ebus_type, _max_length_from_meta(f.meta)
+            )
+            if datatype in DATATYPE_SIZE:
+                byte_offset += DATATYPE_SIZE[datatype]
+            else:
+                log.warn(
+                    "command",
+                    "datatype size unknown; positions after this field may be wrong",
+                    action="unknown_datatype_size",
+                    name=f.name,
+                    input_type=f.ebus_type,
+                    datatype=datatype,
+                )
             log.debug(
                 "profile",
                 "command field profile selected",
@@ -905,6 +932,7 @@ def build_profiles_and_commands(
     enums: Dict[str, Any] = raw.get("enums", {})
     scalars: Dict[str, Any] = raw.get("scalars", {})
     aliases: Dict[str, Any] = raw.get("aliases", {})
+    models: Dict[str, Any] = raw.get("models", {})
 
     # Identify base models that are only used for inheritance
     # These are models that appear in other models' @inherit decorators
@@ -997,6 +1025,88 @@ def build_profiles_and_commands(
             )
         return t, meta
 
+    def expand_composite_field(
+        parent_name: str, type_name: str, path: List[str], depth: int
+    ) -> List[FieldIR]:
+        """Expand a composite (plain-model) field into leaf FieldIRs.
+
+        Leaf names are the full field-name path joined with '_' prefixed by
+        the parent field name, with repeated underscores collapsed:
+        value: timer -> value_slot1_slot_from, value_daysel. Leaves resolve
+        through the normal type machinery, so profiles, write NN, and byte
+        positions follow automatically.
+        """
+        if depth > 8:
+            log.warn(
+                "template",
+                "composite expansion depth exceeded",
+                action="expansion_depth_exceeded",
+                name=parent_name,
+                input_type=type_name,
+            )
+            return []
+        leaves: List[FieldIR] = []
+        model = models.get(type_name) or {}
+        for child in model.get("fields", []):
+            child_name = str(child.get("name", ""))
+            child_type = _strip_qualified(str(child.get("type", "")))
+            if child_type in models and child_type not in TYPE_MAP:
+                leaves.extend(
+                    expand_composite_field(
+                        parent_name, child_type, path + [child_name], depth + 1
+                    )
+                )
+                continue
+            resolved_type, type_meta = resolve_type_and_meta(child_type)
+            merged_meta = dict(type_meta)
+            leaf_name = "_".join([parent_name] + path + [child_name])
+            while "__" in leaf_name:
+                leaf_name = leaf_name.replace("__", "_")
+            factor_str = merged_meta.get("factor", merged_meta.get("divisor", ""))
+            factor_val = _parse_factor(factor_str) if factor_str else None
+            leaves.append(
+                FieldIR(
+                    name=leaf_name,
+                    ebus_type=resolved_type or child_type,
+                    unit=merged_meta.get("unit", ""),
+                    factor=str(factor_val) if factor_val is not None else "",
+                    offset="",
+                    length=0,
+                    signed=resolved_type.startswith(("S", "s")),
+                    big_endian="R" in resolved_type
+                    or ("B" in resolved_type and "L" not in resolved_type),
+                    bitfield=False,
+                    bitpos=-1,
+                    bitlen=0,
+                    mask="",
+                    our_datatype=_map_type(
+                        resolved_type or child_type,
+                        _max_length_from_meta(merged_meta),
+                    ),
+                    meta=merged_meta,
+                )
+            )
+        return leaves
+
+    def _service_field_ir() -> FieldIR:
+        """UINT8 service companion of two-field template instances."""
+        return FieldIR(
+            name="service",
+            ebus_type="UCH",
+            unit="",
+            factor="",
+            offset="",
+            length=0,
+            signed=False,
+            big_endian=False,
+            bitfield=False,
+            bitpos=-1,
+            bitlen=0,
+            mask="",
+            our_datatype="UINT8",
+            meta={},
+        )
+
     # Process each register into commands
     for reg in registers:
         reg_name = reg.get("name", "unnamed")
@@ -1016,8 +1126,39 @@ def build_profiles_and_commands(
         field_irs: List[FieldIR] = []
         
         if template_name and template_type:
+            # Composite template argument (e.g. Timer<timer>): expand into
+            # positioned leaf sub-fields. Mapped arguments (e.g. phase) are
+            # excluded by the TYPE_MAP gate; the service companion of
+            # two-field templates is preserved.
+            tt = _strip_qualified(template_type)
+            composite_leaves: List[FieldIR] = []
+            if tt in models and tt not in TYPE_MAP:
+                composite_leaves = expand_composite_field("value", tt, [], 0)
+                if composite_leaves and any(
+                    fi.ebus_type in _BIT_GATED_EBUS_TYPES for fi in composite_leaves
+                ):
+                    log.warn(
+                        "template",
+                        "expansion needs bitfield leaves; falling back to scalar",
+                        action="expansion_bitfield_fallback",
+                        name="value",
+                        input_type=tt,
+                    )
+                    composite_leaves = []
+            if composite_leaves:
+                log.debug(
+                    "template",
+                    "composite field expanded",
+                    action="composite_expanded",
+                    name="value",
+                    input_type=tt,
+                    leaves=[fi.name for fi in composite_leaves],
+                )
+                field_irs.extend(composite_leaves)
+                if template_name in _TWO_FIELD_TEMPLATES:
+                    field_irs.append(_service_field_ir())
             # Handle template models
-            if template_name in _SINGLE_FIELD_TEMPLATES:
+            elif template_name in _SINGLE_FIELD_TEMPLATES:
                 # Single field template: the type is template_type
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
                 
@@ -1094,23 +1235,7 @@ def build_profiles_and_commands(
                 field_irs.append(field_ir)
                 
                 # Service field (UINT8)
-                field_ir = FieldIR(
-                    name="service",
-                    ebus_type="UCH",
-                    unit="",
-                    factor="",
-                    offset="",
-                    length=0,
-                    signed=False,
-                    big_endian=False,
-                    bitfield=False,
-                    bitpos=-1,
-                    bitlen=0,
-                    mask="",
-                    our_datatype="UINT8",
-                    meta={},
-                )
-                field_irs.append(field_ir)
+                field_irs.append(_service_field_ir())
             else:
                 # Unknown template: assume single value field
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
@@ -1141,6 +1266,35 @@ def build_profiles_and_commands(
                 f_ebus_type = f.get("ebus_type", "")
                 f_decorators = f.get("decorators", [])
                 f_meta = f.get("meta", {})
+                
+                # Composite field: plain model without a library mapping of
+                # its own (mapped types like phase are never expanded) →
+                # emit positioned leaf sub-fields instead of the raw type.
+                leaf_type = _strip_qualified(f_ebus_type)
+                if leaf_type in models and leaf_type not in TYPE_MAP:
+                    leaves = expand_composite_field(f_name, leaf_type, [], 0)
+                    if leaves and any(
+                        fi.ebus_type in _BIT_GATED_EBUS_TYPES for fi in leaves
+                    ):
+                        log.warn(
+                            "template",
+                            "expansion needs bitfield leaves; falling back to scalar",
+                            action="expansion_bitfield_fallback",
+                            name=f_name,
+                            input_type=leaf_type,
+                        )
+                        leaves = []
+                    if leaves:
+                        log.debug(
+                            "template",
+                            "composite field expanded",
+                            action="composite_expanded",
+                            name=f_name,
+                            input_type=leaf_type,
+                            leaves=[fi.name for fi in leaves],
+                        )
+                        field_irs.extend(leaves)
+                        continue
                 
                 # Resolve the type and get metadata
                 resolved_type, type_meta = resolve_type_and_meta(f_ebus_type)

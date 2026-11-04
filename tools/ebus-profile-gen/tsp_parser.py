@@ -313,6 +313,7 @@ class TspParser:
             "types": {},
             "enums": {},
             "scalars": {},
+            "models": {},
             "aliases": aliases,
             "includes": list(self.files),
         }
@@ -690,7 +691,114 @@ class TspParser:
                 i = next_i
                 continue
 
+            # Plain (decorator-less) model: a composite type definition,
+            # never a command (no @zz/@base). Recorded as raw {name, type}
+            # field pairs for mapper-side composite field expansion.
+            mm = _MODEL_RE.match(line)
+            if mm:
+                ir["models"][mm.group(1)] = {
+                    "name": mm.group(1),
+                    "fields": self._split_model_fields(mm.group(2)),
+                    "file": fpath,
+                    "line": lineno,
+                    "namespace": namespace,
+                }
+                i += 1
+                continue
+
+            mg = _MODEL_GENERIC_RE.match(line)
+            if mg:
+                ir["models"][mg.group(1)] = {
+                    "name": mg.group(1),
+                    "type_param": mg.group(2),
+                    "fields": self._split_model_fields(mg.group(3)),
+                    "file": fpath,
+                    "line": lineno,
+                    "namespace": namespace,
+                }
+                i += 1
+                continue
+
+            mo = _MODEL_OPEN_RE.match(line)
+            if mo:
+                fields, next_i = self._parse_plain_model_body(lines, i + 1)
+                ir["models"][mo.group(1)] = {
+                    "name": mo.group(1),
+                    "fields": fields,
+                    "file": fpath,
+                    "line": lineno,
+                    "namespace": namespace,
+                }
+                i = next_i
+                continue
+
+            mgo = _MODEL_GENERIC_OPEN_RE.match(line)
+            if mgo:
+                fields, next_i = self._parse_plain_model_body(lines, i + 1)
+                ir["models"][mgo.group(1)] = {
+                    "name": mgo.group(1),
+                    "type_param": mgo.group(2),
+                    "fields": fields,
+                    "file": fpath,
+                    "line": lineno,
+                    "namespace": namespace,
+                }
+                i = next_i
+                continue
+
+            mt = _MODEL_TEMPLATE_RE.match(line)
+            if mt:
+                ir["models"][mt.group(1)] = {
+                    "name": mt.group(1),
+                    "fields": [],
+                    "is": mt.group(2),
+                    "arg": mt.group(3),
+                    "file": fpath,
+                    "line": lineno,
+                    "namespace": namespace,
+                }
+                i += 1
+                continue
+
             i += 1
+
+    @staticmethod
+    def _split_model_fields(body: str) -> List[Dict[str, str]]:
+        """Split inline `{ a: T; b: U }` body text into raw field pairs."""
+        fields: List[Dict[str, str]] = []
+        for token in body.split(";"):
+            token = token.strip()
+            if not token:
+                continue
+            fm = _FIELD_RE.match(token)
+            if fm:
+                fields.append({"name": fm.group(1), "type": fm.group(2)})
+        return fields
+
+    @staticmethod
+    def _parse_plain_model_body(
+        lines: SourceLines, start_i: int
+    ) -> Tuple[List[Dict[str, str]], int]:
+        """Collect raw field pairs of a plain model body; returns (fields, next_i)."""
+        fields: List[Dict[str, str]] = []
+        i = start_i
+        while i < len(lines):
+            line = lines[i]
+            fm = _FIELD_RE.match(line)
+            if fm:
+                fields.append({"name": fm.group(1), "type": fm.group(2)})
+                i += 1
+                continue
+            if _CLOSE_BRACE_RE.match(line):
+                return fields, i + 1
+            close_at = line.find("}")
+            if close_at >= 0:
+                fm = _FIELD_RE.match(line[:close_at].strip())
+                if fm:
+                    fields.append({"name": fm.group(1), "type": fm.group(2)})
+                return fields, i + 1
+            i += 1
+        return fields, i
 
     def _parse_model_inline(
         self,
