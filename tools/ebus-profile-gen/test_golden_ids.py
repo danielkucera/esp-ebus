@@ -3,10 +3,11 @@
 
 Verifies resolved read/write addressing of representative commands against
 the archived ebusd CSV ground truth (concatenation model: template PBSB +
-base D bytes + member ext), the BI bitfield gate, write-only commands
-with an empty id, 1-based byte positions of fields, and composite expansion
-field shapes (plain models → positioned leaves, bitfields → scalar). Run
-from the repo root:
+base D bytes + member ext), BI byte-grouping (consecutive BI0..BI7 runs
+collapse to one UINT8 field carrying a `bits` name->bit map), write-only
+commands with an empty id, 1-based byte positions of fields, and composite
+expansion field shapes (plain models → positioned leaves). Run from the
+repo root:
 
     python3 tools/ebus-profile-gen/test_golden_ids.py
 """
@@ -160,6 +161,34 @@ def expect_fields(
         _failures.append(str(exc))
 
 
+def expect_bits(
+    by_name: Dict[str, List[Dict[str, Any]]],
+    name: str,
+    field_name: str,
+    bits: Dict[str, int],
+) -> None:
+    """Assert the `bits` map of a byte-grouped (BI0..BI7) field."""
+    global _checks
+    _checks += 1
+    entries = by_name.get(name)
+    try:
+        assert entries, (
+            f"{name}: command missing (present: {sorted(by_name)})"
+        )
+        for e in entries:
+            got = {
+                f["name"]: f.get("bits")
+                for f in e["fields"]
+                if "bits" in f
+            }
+            assert got.get(field_name) == bits, (
+                f"{name}: expected bits[{field_name!r}]={bits}, "
+                f"got {got.get(field_name)}"
+            )
+    except AssertionError as exc:
+        _failures.append(str(exc))
+
+
 def main() -> int:
     # hcmode_inc: @inherit chains, BI gate, no fabricated 0x0d.
     hcmode = entries_for("src/vaillant/hcmode_inc.tsp")
@@ -170,7 +199,7 @@ def main() -> int:
     expect(hcmode, "status", "b51103")
     expect(hcmode, "status_cir_pump", "b51200", "b51200")
     expect(hcmode, "wm", "", "b505")
-    expect_absent(hcmode, "set_mode", "BI bitfield gate")
+    expect(hcmode, "set_mode", "b51000", "b51000")
     expect_absent(hcmode, "rm", "inherited via date_time")
 
     # iotesthp_inc: write-only commands carry wid only.
@@ -189,8 +218,8 @@ def main() -> int:
     # 05.vd4: wid inheritance through is-template flatten, BI gate.
     vd4 = entries_for("src/vaillant/05.vd4.tsp")
     expect(vd4, "enable_monitoring", "b5090d0100", "b5090e0100")
-    expect_absent(vd4, "switch_relays", "BI bitfield gate")
-    expect_absent(vd4, "actual_digital_inputs", "BI bitfield gate")
+    expect(vd4, "switch_relays", "b5090d2700", "b5090e2700")
+    expect(vd4, "actual_digital_inputs", "b5090d3a00", "b5090e3a00")
 
     # 08.ehp: concat ids, imported models, phase NOT gated.
     ehp = entries_for("src/vaillant/08.ehp.tsp")
@@ -199,7 +228,7 @@ def main() -> int:
     expect(ehp, "date_time", "b50400")
     expect(ehp, "iotest", "", "b50602")
     expect(ehp, "clearerrorhistory", "", "b5030201")
-    expect_absent(ehp, "set_mode", "BI bitfield gate (imported)")
+    expect(ehp, "set_mode", "b51000", "b51000")
 
     # broadcast: b/wi write side shares the base tail; archived ZZ is FE
     # (alias BROADCAST = Targets.broadcast resolves via union constants).
@@ -229,8 +258,8 @@ def main() -> int:
     expect_positions(e7c, "monday_heating_temp", [1, 3, 5, 7, 9, 11, 13])
 
     # Composite expansion: plain models become positioned leaf sub-fields
-    # (full field path joined with '_'), bitfield models fall back to the
-    # scalar field so the BI gate never fires on them.
+    # (full field path joined with '_'); consecutive BI0..BI7 runs collapse
+    # into one UINT8 field carrying the `bits` name->bit map.
     expect_fields(
         errors, "currenterror",
         ["value_error", "value_error_1", "value_error_2",
@@ -251,7 +280,36 @@ def main() -> int:
          "value_daysel"],
     )
     expect_positions(t392, "cc_timer__monday", [1, 2, 3, 4, 5, 6, 7])
-    expect_fields(ehp, "phase_status", ["value"])
+    expect_fields(ehp, "phase_status", ["value_phase"])
+    expect_bits(
+        ehp, "phase_status", "value_phase",
+        {"value_phase": 0, "value_phase_1": 1, "value_phase_2": 2},
+    )
+    expect_fields(
+        hcmode, "set_mode",
+        ["hcmode", "flowtempdesired", "hwctempdesired", "hwcflowtempdesired",
+         "ign", "disablehc", "ign_1", "remoteControlHcPump"],
+    )
+    expect_positions(hcmode, "set_mode", [1, 2, 3, 4, 5, 6, 7, 8])
+    expect_bits(
+        hcmode, "set_mode", "disablehc",
+        {"disablehc": 0, "disablehwctapping": 1, "disablehwcload": 2},
+    )
+    expect_bits(
+        hcmode, "set_mode", "remoteControlHcPump",
+        {"remoteControlHcPump": 0, "releaseBackup": 1, "releaseCooling": 2},
+    )
+    expect_fields(
+        ehp, "set_mode",
+        ["hcmode", "flowtempdesired", "hwctempdesired", "hwcflowtempdesired",
+         "ign", "disablehc", "ign_1", "remoteControlHcPump"],
+    )
+    expect_fields(vd4, "switch_relays", ["bi"])
+    expect_positions(vd4, "switch_relays", [1])
+    expect_bits(vd4, "switch_relays", "bi", {"bi": 0, "bi_1": 1})
+    expect_fields(vd4, "actual_digital_inputs", ["bi"])
+    expect_positions(vd4, "actual_digital_inputs", [1])
+    expect_bits(vd4, "actual_digital_inputs", "bi", {"bi": 0, "bi_1": 1})
 
     if _failures:
         print(f"FAIL: {_failures.__len__()}/{_checks} checks failed")

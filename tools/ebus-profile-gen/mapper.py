@@ -316,6 +316,57 @@ _BIT_GATED_EBUS_TYPES = frozenset(
 )
 
 
+def _bit_index(ebus_type: str) -> Optional[int]:
+    """Bit number of a BI0..BI7 type, else None."""
+    t = _strip_qualified(ebus_type)
+    if t.startswith("BI") and t[2:].isdigit():
+        n = int(t[2:])
+        if n <= 7:
+            return n
+    return None
+
+
+def _merge_bit_runs(fields: List[FieldIR]) -> List[FieldIR]:
+    """Collapse each consecutive BI0..BI7 run into one byte-wide UINT8 field.
+
+    The bits of a run share a single wire byte, which byte-positioned fields
+    cannot represent individually: keep the first member's name, carry the
+    whole run as a `bits` name->bit-index map in meta, and count it as one
+    UINT8 byte for positions and NN.
+    """
+    merged: List[FieldIR] = []
+    i = 0
+    while i < len(fields):
+        if _bit_index(fields[i].ebus_type) is None:
+            merged.append(fields[i])
+            i += 1
+            continue
+        run: List[FieldIR] = []
+        while i < len(fields) and _bit_index(fields[i].ebus_type) is not None:
+            run.append(fields[i])
+            i += 1
+        head = run[0]
+        merged.append(
+            FieldIR(
+                name=head.name,
+                ebus_type="UINT8",
+                unit=head.unit,
+                factor=head.factor,
+                offset=head.offset,
+                length=1,
+                signed=head.signed,
+                big_endian=head.big_endian,
+                bitfield=True,
+                bitpos=0,
+                bitlen=8,
+                mask=head.mask,
+                our_datatype="UINT8",
+                meta={**head.meta, "bits": {f.name: _bit_index(f.ebus_type) for f in run}},
+            )
+        )
+    return merged
+
+
 def _strip_qualified(ebus_type: str) -> str:
     """Strip namespace qualification from a type name (Ebus.Num.UCH -> UCH)."""
     t = (ebus_type or "").strip()
@@ -702,7 +753,7 @@ def commands_to_flat_entries(
     """Convert FamilyIR commands to config/simulation.json schema entries.
 
     {key, name, zz, id, [nn], wid, interval, master,
-     fields: [{name, profile, position, ha_profile}]}
+     fields: [{name, profile, position, ha_profile, [bits]}]}
     """
     log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
@@ -830,6 +881,8 @@ def commands_to_flat_entries(
                 field_entry["min"] = min_val
             if max_val is not None:
                 field_entry["max"] = max_val
+            if f.meta.get("bits"):
+                field_entry["bits"] = f.meta["bits"]
             
             fields.append(field_entry)
             
@@ -1134,17 +1187,6 @@ def build_profiles_and_commands(
             composite_leaves: List[FieldIR] = []
             if tt in models and tt not in TYPE_MAP:
                 composite_leaves = expand_composite_field("value", tt, [], 0)
-                if composite_leaves and any(
-                    fi.ebus_type in _BIT_GATED_EBUS_TYPES for fi in composite_leaves
-                ):
-                    log.warn(
-                        "template",
-                        "expansion needs bitfield leaves; falling back to scalar",
-                        action="expansion_bitfield_fallback",
-                        name="value",
-                        input_type=tt,
-                    )
-                    composite_leaves = []
             if composite_leaves:
                 log.debug(
                     "template",
@@ -1273,17 +1315,6 @@ def build_profiles_and_commands(
                 leaf_type = _strip_qualified(f_ebus_type)
                 if leaf_type in models and leaf_type not in TYPE_MAP:
                     leaves = expand_composite_field(f_name, leaf_type, [], 0)
-                    if leaves and any(
-                        fi.ebus_type in _BIT_GATED_EBUS_TYPES for fi in leaves
-                    ):
-                        log.warn(
-                            "template",
-                            "expansion needs bitfield leaves; falling back to scalar",
-                            action="expansion_bitfield_fallback",
-                            name=f_name,
-                            input_type=leaf_type,
-                        )
-                        leaves = []
                     if leaves:
                         log.debug(
                             "template",
@@ -1409,8 +1440,11 @@ def build_profiles_and_commands(
             unsupported = True
             unsupported_reason = f"unknown rw direction: {rw}"
 
-        # BI bitfield gate: the wire payload cannot be emitted faithfully
-        # (see _BIT_GATED_EBUS_TYPES) - drop the whole command.
+        # BI bitfield children (BI0..BI7) share one wire byte: collapse each
+        # consecutive run into a single UINT8 field with a `bits` name->bit
+        # map first; anything still gated (boolean/BOOL, raw bitfield names)
+        # drops the whole command.
+        field_irs = _merge_bit_runs(field_irs)
         for f in field_irs:
             if f.ebus_type in _BIT_GATED_EBUS_TYPES:
                 unsupported = True
