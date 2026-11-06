@@ -230,13 +230,26 @@ int64_t CommandManager::saveCommands() const {
   {
     auto root_array = writer.arrayScope();
 
-    // Header row for compressed format
+    // Header row for tabular format. The optional nn column is only
+    // present when at least one command carries an explicit read-NN
+    // override (derived NN is never serialized); write_type is always
+    // the trailing column.
+    const bool any_nn =
+        std::any_of(commands_.begin(), commands_.end(),
+                    [](const Command& c) { return c.hasNnOverride(); });
     {
       auto header_array = writer.arrayScope();
-      static const char* header[] = {"key",       "name",      "read_cmd",
-                                     "write_cmd", "interval",  "master",
-                                     "fields",    "write_type"};
-      for (const char* h : header) writer.writeValue(h);
+      static const char* header_nn[] = {
+          "key", "name",     "zz",     "id",     "nn",
+          "wid", "interval", "master", "fields", "write_type"};
+      static const char* header[] = {"key",    "name",   "zz",
+                                     "id",     "wid",    "interval",
+                                     "master", "fields", "write_type"};
+      if (any_nn) {
+        for (const char* h : header_nn) writer.writeValue(h);
+      } else {
+        for (const char* h : header) writer.writeValue(h);
+      }
     }
 
     // Data rows in tabular format
@@ -244,10 +257,17 @@ int64_t CommandManager::saveCommands() const {
       auto row_array = writer.arrayScope();
       writer.writeValue(c.getKey());
       writer.writeValue(c.getName());
-      writer.writeHexValue(c.getReadCmd());
-      // Serialize write_cmd from separate storage
+      writer.writeHexValue(c.getZz());
+      writer.writeHexValue(c.getId());
+      if (any_nn) {
+        if (c.hasNnOverride()) {
+          writer.writeHexValue(c.getNn());
+        } else {
+          writer.writeValue("");
+        }
+      }
       if (c.hasWriteCmd()) {
-        writer.writeHexValue(c.getWriteCmd(*this));
+        writer.writeHexValue(c.getWid());
       } else {
         writer.writeValue("");
       }
@@ -269,6 +289,14 @@ int64_t CommandManager::saveCommands() const {
             writer.writeField("raw", true);
           }
           writer.writeField("ha_profile", c.getFieldHAProfileName(i));
+          if (c.hasFieldBits(i)) {
+            auto bits_obj = writer.objectScope("bits");
+            const size_t bit_count = c.getFieldBitCount(i);
+            for (size_t b = 0; b < bit_count; ++b) {
+              writer.writeField(c.getFieldBitName(i, b),
+                                static_cast<uint32_t>(b));
+            }
+          }
           float min_ov = getFieldMinOverride(c.getKeyId(), i);
           float max_ov = getFieldMaxOverride(c.getKeyId(), i);
           if (!std::isnan(min_ov)) {
@@ -340,11 +368,13 @@ void CommandManager::fetchCommands(
       auto scope = writer.objectScope();
       writer.writeField("key", c->getKey());
       writer.writeField("name", c->getName());
-      writer.writeHexField("read_cmd", c->getReadCmd());
+      writer.writeHexField("zz", c->getZz());
+      writer.writeHexField("id", c->getId());
+      if (c->hasNnOverride()) {
+        writer.writeHexField("nn", c->getNn());
+      }
       if (c->hasWriteCmd()) {
-        writer.writeHexField("write_cmd", c->getWriteCmd(*this));
-      } else {
-        writer.writeField("write_cmd", "");
+        writer.writeHexField("wid", c->getWid());
       }
       writer.writeField("interval", c->getInterval());
       writer.writeField("master", c->getMaster());
@@ -359,6 +389,14 @@ void CommandManager::fetchCommands(
         writer.writeField("position",
                           static_cast<uint32_t>(c->getFieldPosition(j)));
         writer.writeField("ha_profile", c->getFieldHAProfileName(j));
+        if (c->hasFieldBits(j)) {
+          auto bits_obj = writer.objectScope("bits");
+          const size_t bit_count = c->getFieldBitCount(j);
+          for (size_t b = 0; b < bit_count; ++b) {
+            writer.writeField(c->getFieldBitName(j, b),
+                              static_cast<uint32_t>(b));
+          }
+        }
         if (c->isFieldRaw(j)) {
           writer.writeField("raw", true);
         }
@@ -500,7 +538,9 @@ void CommandManager::fetchValues(const ebus::JsonChunkVisitor& visitor) const {
       const uint32_t age =
           (cmd->getLast() > 0) ? (now - cmd->getLast()) / 1000 : 0;
       const size_t fields = cmd->getFieldCount();
-      if (fields <= 1) {
+      const bool bits_expand =
+          fields > 0 && cmd->hasFieldBits(0) && fields <= 1;
+      if (fields <= 1 && !bits_expand) {
         auto scope = writer.objectScope();
         writer.writeField("key", cmd->getKey());
         writer.writeField("name", cmd->getName());
@@ -518,11 +558,43 @@ void CommandManager::fetchValues(const ebus::JsonChunkVisitor& visitor) const {
         writer.writeField("write", cmd->hasWriteCmd());
         writer.writeField("active", cmd->getActive());
       } else {
-        // Multi-field: one row per field so dumb renderers (values page)
-        // never see [object Object]. Name carries both sides
-        // ("cmd/field"); Read polls the whole telegram once (see UI: only
-        // the first field row carries the button).
+        // Multi-field (or single-field bits): one row per field so dumb
+        // renderers (values page) never see [object Object]. A bits field
+        // expands to one row per bit (field = bit name, 0/1). Name carries
+        // both sides ("cmd/field"); Read polls the whole telegram once
+        // (see UI: only the first field row carries the button).
         for (size_t f = 0; f < fields; ++f) {
+          if (cmd->hasFieldBits(f)) {
+            const size_t bit_count = cmd->getFieldBitCount(f);
+            uint8_t byte = 0;
+            const bool byte_ok = cmd->getFieldByteValue(f, byte);
+            for (size_t b = 0; b < bit_count; ++b) {
+              auto scope = writer.objectScope();
+              writer.writeField("key", cmd->getKey());
+              const char* fn = cmd->getFieldName(f);
+              const std::string_view bit_name = cmd->getFieldBitName(f, b);
+              std::string name =
+                  std::string(cmd->getName()) + "/" +
+                  std::string(bit_name.empty() ? (fn && fn[0] ? fn : "value")
+                                               : bit_name);
+              writer.writeField("name", name);
+              writer.writeField(
+                  "field", bit_name.empty()
+                               ? std::string_view(fn && fn[0] ? fn : "value")
+                               : bit_name);
+              writer.appendKey("value");
+              if (!byte_ok) {
+                writer.writeRaw("null");
+              } else {
+                writer.writeValue(static_cast<uint32_t>((byte >> b) & 1u));
+              }
+              writer.writeField("unit", "");
+              writer.writeField("age", age);
+              writer.writeField("write", false);
+              writer.writeField("active", cmd->getActive());
+            }
+            continue;
+          }
           auto scope = writer.objectScope();
           writer.writeField("key", cmd->getKey());
           const char* fn = cmd->getFieldName(f);
@@ -550,28 +622,6 @@ void CommandManager::fetchValues(const ebus::JsonChunkVisitor& visitor) const {
     ++i;
   }
   visitor("]");
-}
-
-ebus::ByteView CommandManager::getWriteCmd(size_t idx) const {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  if (idx < write_cmds_.size()) {
-    return ebus::ByteView(write_cmds_[idx].data(), write_cmds_[idx].size());
-  }
-  return {};
-}
-
-bool CommandManager::addWriteCmd(PollSequence&& cmd) {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  if (write_cmds_.size() >= write_cmd_capacity_) {
-    return false;
-  }
-  write_cmds_.push_back(std::move(cmd));
-  return true;
-}
-
-size_t CommandManager::getWriteCmdCount() const {
-  std::lock_guard<std::recursive_mutex> lock(mutex_);
-  return write_cmds_.size();
 }
 
 namespace {
@@ -677,6 +727,8 @@ void CommandManager::deserializeCommands(FILE* file) {
   bool eof = false;
   size_t loaded_count = 0;
   bool header_seen = false;
+  bool legacy_tabular = false;
+  bool has_nn_col = false;
 
   auto feed_file = [&]() -> bool {
     if (eof) return false;
@@ -740,6 +792,18 @@ void CommandManager::deserializeCommands(FILE* file) {
     if (token == ebus::detail::JsonReader::Token::array_start) {
       if (!header_seen) {
         header_seen = true;
+        // Schema detection: legacy headers carry read_cmd, the compact
+        // schema carries zz; the nn column is optional (see saveCommands).
+        row_reader.reset();
+        if (row_reader.next() == ebus::detail::JsonReader::Token::array_start) {
+          while (row_reader.next() == ebus::detail::JsonReader::Token::string) {
+            if (row_reader.value() == "read_cmd") {
+              legacy_tabular = true;
+            } else if (row_reader.value() == "nn") {
+              has_nn_col = true;
+            }
+          }
+        }
         continue;
       }
       // Pre-extract key to drop any stale field overrides for that key
@@ -752,7 +816,8 @@ void CommandManager::deserializeCommands(FILE* file) {
         }
       }
       row_reader.reset();
-      insertCommand(Command::fromTabular(row_reader));
+      insertCommand(
+          Command::fromTabular(row_reader, legacy_tabular, has_nn_col));
       loaded_count++;
     } else if (token == ebus::detail::JsonReader::Token::object_start) {
       row_reader.reset();

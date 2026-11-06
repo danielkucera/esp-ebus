@@ -14,8 +14,8 @@ Commands are defined as a JSON array of objects. Each command object specifies a
   {
     "key": "09",
     "name": "Buffer/Middle_Temperature",
-    "read_cmd": "08b50903290100",
-    "write_cmd": "",
+    "zz": "08",
+    "id": "b509290100",
     "interval": 0,
     "master": false,
     "fields": [
@@ -36,8 +36,9 @@ Commands are defined as a JSON array of objects. Each command object specifies a
   {
     "key": "32",
     "name": "Basement/Temperature_NightRoomSetPoint",
-    "read_cmd": "50b509030d3300",
-    "write_cmd": "50b509040e3300",
+    "zz": "50",
+    "id": "b5090d3300",
+    "wid": "b5090e3300",
     "interval": 60,
     "master": false,
     "fields": [
@@ -59,8 +60,11 @@ Commands are defined as a JSON array of objects. Each command object specifies a
 #### Command Properties
 - **`key`** *(string)*: Unique decimal or hexadecimal identifier for the command (e.g. `"09"` or `"43"`). Used as prefix for HA `unique_id` and MQTT control topic (`ebus/<id>/set/<key>`).
 - **`name`** *(string)*: Command name hierarchy using slashes and underscores (e.g. `"Buffer/Middle_Temperature"`). Generates MQTT value subtopic `ebus/<id>/values/buffer/middle_temperature`.
-- **`read_cmd`** *(hex string)*: Hexadecimal eBUS master read sequence (e.g. `"08b50903290100"`).
-- **`write_cmd`** *(hex string, optional)*: Hexadecimal eBUS master write prefix sequence.
+- **`zz`** *(hex string)*: 1-byte destination address of the telegram (e.g. `"08"`).
+- **`id`** *(hex string)*: Read id `PB SB DD...` without `zz`, 2–6 bytes (e.g. `"b509290100"`). The read telegram is built as `zz id[0] id[1] NN id[2..]` with `NN = len(id) - 2` (example: `"08"` + `"b509290100"` → `08b50903290100`).
+- **`nn`** *(hex string, optional)*: Explicit 1-byte read NN for the rare telegrams where it differs from the derived `len(id) - 2`.
+- **`wid`** *(hex string, optional)*: Write id with the same layout as `id`. The write NN is computed at runtime as `len(wid) - 2` plus the appended value bytes. Omit for read-only commands.
+- **`write_type`** *(string, optional)*: Write encoding: `"simple"` (default) appends the value to the write id frame; `"weishaupt"` opts into the WCM 5023 encoding with a two-byte value. See [Weishaupt write support](../doc/weishaupt-writes.md).
 - **`interval`** *(integer)*: Automatic polling interval in seconds. `0` disables active polling (passive listening only).
 - **`master`** *(boolean)*: `true` if field data is located in the master message payload; `false` if in the slave response payload.
 - **`fields`** *(array)*: Array of data field definitions (max 4 per command).

@@ -157,6 +157,8 @@ esp_err_t CommandsApi::handleCommandsInsert(httpd_req_t* req) {
   ebus::detail::JsonReader reader_insert(body_sv);
   HttpUtils::prepareJsonReaderForArray(reader_insert, "commands", parse_error);
   bool header_seen = false;
+  bool legacy_tabular = false;
+  bool has_nn_col = false;
   while (true) {
     std::string_view cmd_sv = reader_insert.rawValue();
     if (cmd_sv.empty()) break;
@@ -165,11 +167,23 @@ esp_err_t CommandsApi::handleCommandsInsert(httpd_req_t* req) {
     if (row_token == ebus::detail::JsonReader::Token::array_start) {
       if (!header_seen) {
         header_seen = true;
+        // Schema detection: legacy headers carry read_cmd, the nn column
+        // is optional (see saveCommands)
+        row_reader.reset();
+        if (row_reader.next() == ebus::detail::JsonReader::Token::array_start) {
+          while (row_reader.next() == ebus::detail::JsonReader::Token::string) {
+            if (row_reader.value() == "read_cmd") {
+              legacy_tabular = true;
+            } else if (row_reader.value() == "nn") {
+              has_nn_col = true;
+            }
+          }
+        }
         continue;
       }
       row_reader.reset();
       instance_->command_manager_.insertCommand(
-          Command::fromTabular(row_reader));
+          Command::fromTabular(row_reader, legacy_tabular, has_nn_col));
     } else if (row_token == ebus::detail::JsonReader::Token::object_start) {
       row_reader.reset();
       instance_->command_manager_.insertCommand(Command::fromJson(row_reader));
