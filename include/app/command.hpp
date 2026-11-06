@@ -31,6 +31,10 @@ struct FieldRef {
   uint8_t position = 0;
   // Home Assistant - per-field (0 = no HA profile)
   uint8_t ha_profile_idx = 0;
+  // Packed bit-name list (StringPool id, 0 = none): names joined by 0x1f
+  // in bit-index order (bit i = i-th segment). One wire byte expands to
+  // one JSON key / MQTT topic / HA entity per bit at payload time.
+  uint8_t bits_str_id = 0;
   // Raw presentation: skip sentinel-to-null mapping in decode, return the
   // raw numeric value instead. Opt-in per field (default false).
   bool raw = false;
@@ -117,6 +121,20 @@ class Command {
 
   // Raw presentation flag for field i (out of range reads false).
   bool isFieldRaw(size_t i) const;
+
+  // Bit-map accessors (field i carries a `bits` name→index map).
+  bool hasFieldBits(size_t i) const;
+  // Number of bits (0 when the field has no map). Max 8 (BI0..BI7).
+  size_t getFieldBitCount(size_t i) const;
+  // Name of bit `bit` (index = position in the packed list). Empty when
+  // out of range or the field has no map.
+  std::string_view getFieldBitName(size_t i, size_t bit) const;
+  // Decoded whole-byte value of field i (bit extraction source);
+  // false when undecodable / out of range.
+  bool getFieldByteValue(size_t i, uint8_t& out) const;
+  // Writes one JSON key per bit of field i: {"<bitname>":0|1,...}.
+  // Returns false (writes nothing) when the field has no map.
+  bool writeFieldBits(ebus::detail::JsonWriter& writer, size_t i) const;
 
   bool matches(ebus::ByteView master_view) const;
 

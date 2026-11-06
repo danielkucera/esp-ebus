@@ -873,7 +873,9 @@ def commands_to_flat_entries(
                 "name": f.name,
                 "profile": profile,
                 "position": byte_offset + 1,
-                "ha_profile": "",
+                # Bits fields are read-only bit rows in HA: one
+                # binary_sensor per bit (values payload expands the byte).
+                "ha_profile": "binary_sensor" if f.meta.get("bits") else "",
             }
             
             # Add min/max if present

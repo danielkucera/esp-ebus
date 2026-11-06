@@ -72,7 +72,7 @@ By default the CLI writes raw generated output to `tools/ebus-profile-gen/genera
 - `<tsp_stem>.profiles.json` — flat entries `{name, datatype, unit, divider, digits, min, max}` matching the `profiles/data_profiles.json` schema. These can be copied to `profiles/data_profiles_user.json` (the overlay) at compile time.
 - `<tsp_stem>.json` — command entries matching `config/simulation.json` schema:
   `{key, name, zz, id, [nn], wid, interval, master, fields: [{name, profile, position, ha_profile, [bits]}]}`.
-  `wid` is omitted for read-only commands, `interval` defaults to 0 (passive only), `master` defaults to false, `ha_profile` is empty — fill these in by hand.
+  `wid` is omitted for read-only commands, `interval` defaults to 0 (passive only), `master` defaults to false, `ha_profile` is empty — fill these in by hand (exception: fields carrying a `bits` map get `ha_profile: "binary_sensor"` automatically — one HA binary_sensor per bit).
   `bits` appears on byte-grouped bitfield fields (consecutive `BI0`–`BI7` children collapsed into one `UINT8` byte) as a map of sub-field name to bit index within that byte.
   `zz` is the destination byte; `id` is the read id `PB SB Dx...` and `wid` the write id with the same layout, each 2-6 bytes. The `Dx...` tail is the resolved `@base`/`@inherit` D bytes plus the model's own `@ext` bytes (no default `0x0d` is invented); read NN is derived as `len(id)-2` unless an explicit `nn` override is given (the runtime write NN also counts the appended value bytes). Write-only commands have an empty `id` (`""`) and carry the addressing in `wid` alone.
   `key` is prefixed (default: derived from tsp filename, e.g. `08.ehp.tsp` → `ehp_8d`).

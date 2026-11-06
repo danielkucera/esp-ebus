@@ -289,6 +289,14 @@ int64_t CommandManager::saveCommands() const {
             writer.writeField("raw", true);
           }
           writer.writeField("ha_profile", c.getFieldHAProfileName(i));
+          if (c.hasFieldBits(i)) {
+            auto bits_obj = writer.objectScope("bits");
+            const size_t bit_count = c.getFieldBitCount(i);
+            for (size_t b = 0; b < bit_count; ++b) {
+              writer.writeField(c.getFieldBitName(i, b),
+                                static_cast<uint32_t>(b));
+            }
+          }
           float min_ov = getFieldMinOverride(c.getKeyId(), i);
           float max_ov = getFieldMaxOverride(c.getKeyId(), i);
           if (!std::isnan(min_ov)) {
@@ -381,6 +389,14 @@ void CommandManager::fetchCommands(
         writer.writeField("position",
                           static_cast<uint32_t>(c->getFieldPosition(j)));
         writer.writeField("ha_profile", c->getFieldHAProfileName(j));
+        if (c->hasFieldBits(j)) {
+          auto bits_obj = writer.objectScope("bits");
+          const size_t bit_count = c->getFieldBitCount(j);
+          for (size_t b = 0; b < bit_count; ++b) {
+            writer.writeField(c->getFieldBitName(j, b),
+                              static_cast<uint32_t>(b));
+          }
+        }
         if (c->isFieldRaw(j)) {
           writer.writeField("raw", true);
         }
@@ -522,7 +538,9 @@ void CommandManager::fetchValues(const ebus::JsonChunkVisitor& visitor) const {
       const uint32_t age =
           (cmd->getLast() > 0) ? (now - cmd->getLast()) / 1000 : 0;
       const size_t fields = cmd->getFieldCount();
-      if (fields <= 1) {
+      const bool bits_expand =
+          fields > 0 && cmd->hasFieldBits(0) && fields <= 1;
+      if (fields <= 1 && !bits_expand) {
         auto scope = writer.objectScope();
         writer.writeField("key", cmd->getKey());
         writer.writeField("name", cmd->getName());
@@ -540,11 +558,43 @@ void CommandManager::fetchValues(const ebus::JsonChunkVisitor& visitor) const {
         writer.writeField("write", cmd->hasWriteCmd());
         writer.writeField("active", cmd->getActive());
       } else {
-        // Multi-field: one row per field so dumb renderers (values page)
-        // never see [object Object]. Name carries both sides
-        // ("cmd/field"); Read polls the whole telegram once (see UI: only
-        // the first field row carries the button).
+        // Multi-field (or single-field bits): one row per field so dumb
+        // renderers (values page) never see [object Object]. A bits field
+        // expands to one row per bit (field = bit name, 0/1). Name carries
+        // both sides ("cmd/field"); Read polls the whole telegram once
+        // (see UI: only the first field row carries the button).
         for (size_t f = 0; f < fields; ++f) {
+          if (cmd->hasFieldBits(f)) {
+            const size_t bit_count = cmd->getFieldBitCount(f);
+            uint8_t byte = 0;
+            const bool byte_ok = cmd->getFieldByteValue(f, byte);
+            for (size_t b = 0; b < bit_count; ++b) {
+              auto scope = writer.objectScope();
+              writer.writeField("key", cmd->getKey());
+              const char* fn = cmd->getFieldName(f);
+              const std::string_view bit_name = cmd->getFieldBitName(f, b);
+              std::string name =
+                  std::string(cmd->getName()) + "/" +
+                  std::string(bit_name.empty() ? (fn && fn[0] ? fn : "value")
+                                               : bit_name);
+              writer.writeField("name", name);
+              writer.writeField(
+                  "field", bit_name.empty()
+                               ? std::string_view(fn && fn[0] ? fn : "value")
+                               : bit_name);
+              writer.appendKey("value");
+              if (!byte_ok) {
+                writer.writeRaw("null");
+              } else {
+                writer.writeValue(static_cast<uint32_t>((byte >> b) & 1u));
+              }
+              writer.writeField("unit", "");
+              writer.writeField("age", age);
+              writer.writeField("write", false);
+              writer.writeField("active", cmd->getActive());
+            }
+            continue;
+          }
           auto scope = writer.objectScope();
           writer.writeField("key", cmd->getKey());
           const char* fn = cmd->getFieldName(f);

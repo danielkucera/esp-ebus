@@ -581,3 +581,45 @@ TEST_CASE("CommandManager saveCommands round-trips compact schema",
   command_manager.wipeCommands();
   std::remove(tmp_path);
 }
+
+TEST_CASE("CommandManager saveCommands round-trips bits maps",
+          "[CommandManager]") {
+  command_manager.wipeCommands();
+
+  const char* json =
+      R"([{"key":"01","name":"HCMODE","read_cmd":"b509010301","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"hcmode","profile":"uint8","position":1,)"
+      R"("ha_profile":"binary_sensor","bits":{"bi":0,"bi_1":1}}]}])";
+
+  const char* tmp_path = "/tmp/test_bits_roundtrip.json";
+  FILE* f = std::fopen(tmp_path, "wb");
+  REQUIRE(f != nullptr);
+  std::fwrite(json, 1, std::strlen(json), f);
+  std::fclose(f);
+
+  REQUIRE(command_manager.loadCommandsFrom(tmp_path) >= 0);
+  REQUIRE(command_manager.getCommandCount() == 1);
+  Command* cmd = command_manager.findCommand("01");
+  REQUIRE(cmd != nullptr);
+  REQUIRE(cmd->hasFieldBits(0));
+  REQUIRE(cmd->getFieldBitCount(0) == 2);
+
+  std::string fetched;
+  command_manager.fetchCommands(
+      [&fetched](std::string_view s) { fetched += s; });
+  REQUIRE(fetched.find("\"bits\"") != std::string::npos);
+  REQUIRE(fetched.find("\"bi_1\":1") != std::string::npos);
+
+  REQUIRE(command_manager.saveCommands() >= 0);
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() >= 0);
+  Command* reloaded = command_manager.findCommand("01");
+  REQUIRE(reloaded != nullptr);
+  REQUIRE(reloaded->hasFieldBits(0));
+  REQUIRE(reloaded->getFieldBitCount(0) == 2);
+  REQUIRE(reloaded->getFieldBitName(0, 0) == "bi");
+  REQUIRE(reloaded->getFieldBitName(0, 1) == "bi_1");
+
+  command_manager.wipeCommands();
+}

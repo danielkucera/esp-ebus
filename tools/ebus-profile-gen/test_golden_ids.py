@@ -185,6 +185,16 @@ def expect_bits(
                 f"{name}: expected bits[{field_name!r}]={bits}, "
                 f"got {got.get(field_name)}"
             )
+            bits_field = next(
+                (f for f in e["fields"] if f["name"] == field_name), None
+            )
+            assert bits_field is not None and (
+                bits_field.get("ha_profile") == "binary_sensor"
+            ), (
+                f"{name}: bits field {field_name!r} must carry "
+                f"ha_profile=binary_sensor, got "
+                f"{bits_field.get('ha_profile') if bits_field else None!r}"
+            )
     except AssertionError as exc:
         _failures.append(str(exc))
 

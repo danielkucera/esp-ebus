@@ -650,3 +650,82 @@ TEST_CASE("Command evaluate accepts compact schema", "[Command]") {
   REQUIRE_FALSE(error.empty());
   REQUIRE(error.find("zz") != std::string_view::npos);
 }
+
+TEST_CASE("Command bits map parses and expands payload per bit", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"HCMODE","read_cmd":"b5090103","master":false,)"
+      R"("fields":[{"name":"hcmode","profile":"uint8","position":1,)"
+      R"("ha_profile":"binary_sensor","bits":{"bi":0,"bi_1":1,"bi_2":2}}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasFieldBits(0));
+  REQUIRE(cmd.getFieldBitCount(0) == 3);
+  REQUIRE(cmd.getFieldBitName(0, 0) == "bi");
+  REQUIRE(cmd.getFieldBitName(0, 1) == "bi_1");
+  REQUIRE(cmd.getFieldBitName(0, 2) == "bi_2");
+
+  ebus::Sequence data;
+  data.push_back(0x05);  // bits 0 and 2 set
+  cmd.setData(ebus::ByteView(data));
+
+  std::string out;
+  ebus::detail::JsonWriter writer([&out](std::string_view s) { out += s; });
+  {
+    auto scope = writer.objectScope();
+    cmd.writeValuePayload(writer);
+  }
+
+  // One key per bit, no whole-byte key.
+  REQUIRE(out.find("\"bi\":1") != std::string::npos);
+  REQUIRE(out.find("\"bi_1\":0") != std::string::npos);
+  REQUIRE(out.find("\"bi_2\":1") != std::string::npos);
+  REQUIRE(out.find("\"hcmode\"") == std::string::npos);
+  REQUIRE(out.find("\"value\"") == std::string::npos);
+
+  // getValueJson expands too (single-field bits is never a bare scalar).
+  std::string value_out;
+  ebus::detail::JsonWriter vwriter(
+      [&value_out](std::string_view s) { value_out += s; });
+  cmd.getValueJson(vwriter);
+  REQUIRE(value_out.find("\"bi\":1") != std::string::npos);
+}
+
+TEST_CASE("Command evaluate rejects malformed bits maps", "[Command]") {
+  SECTION("Non-object bits") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+        R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+        R"("position":1,"ha_profile":"binary_sensor","bits":"nope"}]})";
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+    REQUIRE(error.find("bits") != std::string_view::npos);
+  }
+
+  SECTION("Non-dense bit indices") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+        R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+        R"("position":1,"ha_profile":"binary_sensor",)"
+        R"("bits":{"bi":0,"bi_2":2}}]})";
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+  }
+
+  SECTION("More than 8 bits") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+        R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+        R"("position":1,"ha_profile":"binary_sensor","bits":{)";
+    for (int i = 0; i < 9; ++i) {
+      if (i) json += ",";
+      json += "\"b" + std::to_string(i) + "\":" + std::to_string(i);
+    }
+    json += "}}]}";
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+  }
+}
