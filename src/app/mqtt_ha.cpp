@@ -256,6 +256,15 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
   if (!profile) return;
 
   std::string_view component = profile->component;
+  // HA number/switch/select use the read/write discovery schema where
+  // command_topic is required - but a scalar HA command can only carry
+  // one field, never the full multi-field object payload. Multi-field
+  // commands therefore publish read-only sensors; any retained config
+  // left by the writable component this replaces is cleared alongside.
+  const bool converted =
+      command->getFieldCount() > 1 &&
+      (component == "switch" || component == "number" || component == "select");
+  if (converted) component = "sensor";
 
   const std::string& dev_id = device_identifiers_;
 
@@ -316,7 +325,30 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
 
     if (remove || !enabled_) {
       if (transport_.publish) transport_.publish(topic_buf, 0, true, "", false);
+      if (converted) {
+        char old_topic_buf[mqtt_ha_buffer_limits::max_topic_length];
+        int olen = snprintf(old_topic_buf, sizeof(old_topic_buf),
+                            "homeassistant/%s/%s/%s/config", profile->component,
+                            dev_id.c_str(), object_id_buf);
+        if (olen > 0 && (size_t)olen < sizeof(old_topic_buf) &&
+            transport_.publish) {
+          transport_.publish(old_topic_buf, 0, true, "", false);
+        }
+      }
       continue;
+    }
+
+    if (converted) {
+      // Drop the retained discovery config of the writable component
+      // this read-only sensor replaced (same object_id, other type).
+      char old_topic_buf[mqtt_ha_buffer_limits::max_topic_length];
+      int olen = snprintf(old_topic_buf, sizeof(old_topic_buf),
+                          "homeassistant/%s/%s/%s/config", profile->component,
+                          dev_id.c_str(), object_id_buf);
+      if (olen > 0 && (size_t)olen < sizeof(old_topic_buf) &&
+          transport_.publish) {
+        transport_.publish(old_topic_buf, 0, true, "", false);
+      }
     }
 
     char state_topic_buf[mqtt_ha_buffer_limits::max_state_topic_length];
@@ -437,8 +469,14 @@ void MqttHA::publishComponent(const Command* command, size_t field_idx,
                      (int)value_expr.size(), value_expr.data());
             writer.writeField("value_template", value_template_buf);
             writer.writeField("command_template", "{{value}}");
-            writer.writeFieldFloat("min", getFieldMin(command, field_idx));
-            writer.writeFieldFloat("max", getFieldMax(command, field_idx));
+            // Profiles with unpopped TypeSpec metadata carry max = 0 -
+            // omit min/max so HA applies its own sane defaults instead
+            // of clamping the slider to a zero-width range.
+            const float max_limit = getFieldMax(command, field_idx);
+            if (max_limit > 0.0f) {
+              writer.writeFieldFloat("min", getFieldMin(command, field_idx));
+              writer.writeFieldFloat("max", max_limit);
+            }
             writer.writeFieldFloat("step", profile ? profile->step : 1);
             writer.writeField("mode",
                               profile && profile->mode && profile->mode[0]

@@ -713,26 +713,7 @@ void Mqtt::handleWrite(std::string_view payload) {
       return;
     }
 
-    ebus::Sequence value_bytes;
-    auto field_dt = command->getFieldDatatype(0);
-    if (ebus::isNumeric(field_dt)) {
-      // Strict parse (see command.cpp): garbage must not become 0.
-      auto parsed = ebus::toNumStrict<double>(val_view);
-      if (parsed) {
-        double val = *parsed;
-        if ((val >= command->getFieldMin(0)) &&
-            (val <= command->getFieldMax(0))) {
-          value_bytes = command->getVectorFromDouble(val, 0);
-        }
-      }
-    } else {
-      if (val_view.size() >= 2 && val_view.front() == '"' &&
-          val_view.back() == '"') {
-        val_view.remove_prefix(1);
-        val_view.remove_suffix(1);
-      }
-      value_bytes = command->getVectorFromString(val_view, 0);
-    }
+    ebus::Sequence value_bytes = command->getVectorFromValue(val_view);
 
     if (!value_bytes.empty()) {
       ebus::Sequence full_write =
@@ -789,26 +770,10 @@ void Mqtt::handleDirectWrite(std::string_view key, std::string_view val_view) {
   Command* command = command_manager.findCommand(key);
   if (command == nullptr) return;
 
-  ebus::Sequence value_bytes;
-  auto field_dt = command->getFieldDatatype(0);
-  if (ebus::isNumeric(field_dt)) {
-    // Strict parse (see command.cpp): garbage must not become 0.
-    auto parsed = ebus::toNumStrict<double>(val_view);
-    if (parsed) {
-      double val = *parsed;
-      if ((val >= command->getFieldMin(0)) &&
-          (val <= command->getFieldMax(0))) {
-        value_bytes = command->getVectorFromDouble(val, 0);
-      }
-    }
-  } else {
-    if (val_view.size() >= 2 && val_view.front() == '"' &&
-        val_view.back() == '"') {
-      val_view.remove_prefix(1);
-      val_view.remove_suffix(1);
-    }
-    value_bytes = command->getVectorFromString(val_view, 0);
-  }
+  // Scalar for single-field commands, {"field":value,...} object for
+  // multi-field ones - getVectorFromValue routes and rejects incomplete
+  // payloads before anything reaches the bus.
+  ebus::Sequence value_bytes = command->getVectorFromValue(val_view);
 
   if (!value_bytes.empty()) {
     ebus::Sequence full_write =

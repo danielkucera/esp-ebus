@@ -81,9 +81,9 @@ class Command {
   // returns the length, or 0 when there is no id or cap is too small.
   size_t buildReadCmd(uint8_t* out, size_t cap) const;
   // Builds the complete write master telegram ZZ wid[0] wid[1] NN
-  // wid[2..] + value. NN = legacy write_cmd NN when one was parsed,
-  // otherwise len(wid)-2 + value.size(). Simple write_type only; empty
-  // when the command is not writable.
+  // wid[2..] + value with NN = len(wid)-2 + value.size() (always
+  // derived; the legacy write_cmd NN byte is discarded at parse time).
+  // Simple write_type only; empty when the command is not writable.
   ebus::Sequence buildWriteCmd(ebus::ByteView value) const;
 
   bool hasWriteCmd() const;
@@ -151,6 +151,14 @@ class Command {
   ebus::Sequence getVectorFromJson(std::string_view json) const;
   ebus::Sequence getVectorFromValue(std::string_view value_json,
                                     size_t field_idx = 0) const;
+  // Multi-field one-shot write: {"field":value,...}. Every field must
+  // be present (ign/ign_* fillers auto-pad with 0), unknown or missing
+  // keys reject the whole payload; fields encode in ascending position
+  // order into a single concatenated value.
+  ebus::Sequence getVectorFromObject(std::string_view object_json) const;
+  // Encodes one raw JSON scalar for field i (range-checked numeric,
+  // exact-bytes string/hex).
+  ebus::Sequence encodeFieldRaw(std::string_view raw, size_t field_idx) const;
   ebus::Sequence getVectorFromDouble(double value, size_t field_idx = 0) const;
   ebus::Sequence getVectorFromString(std::string_view value,
                                      size_t field_idx = 0) const;
@@ -170,9 +178,9 @@ class Command {
   // Parsers shared by fromJson/fromTabular. Compact id/wid carry 2..6
   // bytes (PB SB DD...); legacy read_cmd/write_cmd carry the full wire
   // hex (ZZ PB SB NN D...): read keeps NN only when it differs from
-  // len(id)-2 (explicit override), write keeps its NN as a candidate -
-  // the value length is unknowable at parse time, so buildWriteCmd
-  // decides between the stored and the derived NN.
+  // len(id)-2 (explicit override); write discards its NN byte - the
+  // value length is unknowable at parse time, so buildWriteCmd always
+  // derives NN from the wid length plus the encoded value length.
   void setIdBytes(ebus::ByteView bytes);
   void setWidBytes(ebus::ByteView bytes);
   void setLegacyReadCmd(ebus::ByteView bytes);

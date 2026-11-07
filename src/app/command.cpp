@@ -25,6 +25,12 @@ command_types::WriteType parseWriteType(std::string_view name) {
   return command_types::WriteType::invalid;
 }
 
+// Wire filler fields (ebusd `ign` / `ign_N`) are not client input:
+// multi-field writes auto-pad them with 0 so byte positions stay right.
+bool isIgnFieldName(std::string_view name) {
+  return name == "ign" || name.rfind("ign_", 0) == 0;
+}
+
 // Parses a `bits` map object (reader positioned at object_start). On
 // success stores the packed name list (StringPool id, names joined by
 // 0x1f in bit-index order) into out_id; leaves out_id untouched and
@@ -591,48 +597,158 @@ ebus::Sequence Command::getVectorFromValue(std::string_view value_json,
                                            size_t field_idx) const {
   if (value_json.empty() || field_idx >= fields_.size()) return {};
 
-  if (value_json.size() >= 2 && value_json.front() == '{' &&
-      value_json.back() == '}') {
-    ebus::detail::JsonReader reader(value_json);
-    if (reader.next() == ebus::detail::JsonReader::Token::object_start) {
-      reader.forEachField(
-          [&](std::string_view fkey, ebus::detail::JsonReader& fr) {
-            fr.next();
-            if (fkey == "field") {
-              field_idx = getFieldIndex(fr.value());
-            }
-            return true;
-          });
+  // Tolerate leading whitespace (raw MQTT payloads may be pretty-printed).
+  const size_t start = value_json.find_first_not_of(" \t\r\n");
+  if (start == std::string_view::npos) return {};
+
+  // Object payload: multi-field one-shot write {"field":value,...}.
+  // Missing/unknown keys and bad values reject the whole payload;
+  // nothing partial is ever sent to the bus.
+  if (value_json[start] == '{') {
+    return getVectorFromObject(value_json.substr(start));
+  }
+
+  // A scalar can only ever carry one field - multi-field commands need
+  // the object form, otherwise the wire payload would be truncated.
+  if (fields_.size() != 1) return {};
+
+  return encodeFieldRaw(value_json, field_idx);
+}
+
+ebus::Sequence Command::getVectorFromObject(
+    std::string_view object_json) const {
+  if (fields_.empty() || object_json.size() < 2 || object_json.front() != '{') {
+    return {};
+  }
+
+  struct Provided {
+    std::string_view name;
+    std::string_view raw;
+  };
+  Provided provided[command_types::max_fields];
+  size_t provided_count = 0;
+
+  ebus::detail::JsonReader reader(object_json);
+  if (reader.next() != ebus::detail::JsonReader::Token::object_start) {
+    return {};
+  }
+  bool closed = false;
+  while (true) {
+    auto token = reader.next();
+    if (token == ebus::detail::JsonReader::Token::object_end) {
+      closed = true;
+      break;
+    }
+    if (token != ebus::detail::JsonReader::Token::key) return {};
+    std::string_view key = reader.value();
+    std::string_view raw = reader.rawValue();
+    if (raw.empty() || provided_count >= command_types::max_fields) {
+      return {};
+    }
+    for (size_t p = 0; p < provided_count; ++p) {
+      if (provided[p].name == key) return {};  // duplicate key
+    }
+    provided[provided_count++] = {key, raw};
+  }
+  if (!closed) return {};
+
+  // Every provided key must name a field - stray keys are rejected.
+  for (size_t p = 0; p < provided_count; ++p) {
+    bool matched = false;
+    for (size_t i = 0; i < fields_.size(); ++i) {
+      const char* fname = getFieldName(i);
+      if (fname != nullptr && provided[p].name == fname) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) return {};
+  }
+
+  // Encode in ascending position order (wire order); positions must be
+  // strictly increasing - duplicates would make the concatenated write
+  // layout ambiguous.
+  size_t order[command_types::max_fields];
+  for (size_t i = 0; i < fields_.size(); ++i) order[i] = i;
+  for (size_t a = 1; a < fields_.size(); ++a) {
+    const size_t key = order[a];
+    size_t b = a;
+    while (b > 0 && getFieldPosition(order[b - 1]) > getFieldPosition(key)) {
+      order[b] = order[b - 1];
+      --b;
+    }
+    order[b] = key;
+  }
+  for (size_t a = 1; a < fields_.size(); ++a) {
+    if (getFieldPosition(order[a]) <= getFieldPosition(order[a - 1])) {
+      return {};
     }
   }
 
+  ebus::Sequence out;
+  for (size_t n = 0; n < fields_.size(); ++n) {
+    const size_t i = order[n];
+    const char* fname = getFieldName(i);
+    std::string_view raw;
+    bool have = false;
+    if (fname != nullptr) {
+      for (size_t p = 0; p < provided_count; ++p) {
+        if (provided[p].name == fname) {
+          raw = provided[p].raw;
+          have = true;
+          break;
+        }
+      }
+    }
+    ebus::Sequence field_bytes;
+    if (have) {
+      field_bytes = encodeFieldRaw(raw, i);
+    } else if (fname != nullptr && isIgnFieldName(fname)) {
+      // Filler: pad with zero bytes of the field's datatype width (wire
+      // placeholder, not a user value - range checks do not apply). Raw
+      // zeros, not encode(0): char/hex profiles are non-numeric and
+      // encode() rejects a float DataValue for them.
+      const size_t need = ebus::sizeOfDataType(getFieldDatatype(i));
+      if (need == 0) return {};
+      for (size_t k = 0; k < need; ++k) field_bytes.push_back(0, false);
+    } else {
+      return {};  // missing required field
+    }
+    if (field_bytes.empty()) return {};
+    out.append(field_bytes);
+  }
+  return out;
+}
+
+ebus::Sequence Command::encodeFieldRaw(std::string_view raw,
+                                       size_t field_idx) const {
   if (field_idx >= fields_.size()) return {};
   const auto* profile = getFieldProfile(field_idx);
   if (!profile) return {};
 
   auto dt = getFieldDatatype(field_idx);
-  bool is_num = ebus::isNumeric(dt);
-
-  if (is_num) {
+  if (ebus::isNumeric(dt)) {
     // Strict parse: lenient toNum turns garbage into 0 (or a prefix),
     // which then passes range checks and gets written silently.
-    auto parsed = ebus::toNumStrict<double>(value_json);
+    auto parsed = ebus::toNumStrict<double>(raw);
     if (!parsed) return {};
     double val = *parsed;
     float min_v = getFieldMin(field_idx);
     float max_v = getFieldMax(field_idx);
-    if ((val >= min_v) && (val <= max_v)) {
+    // Profiles whose TypeSpec metadata was not populated yet carry
+    // max = 0 (generator README): treat that as "no upper bound" instead
+    // of rejecting every non-zero value. min still applies.
+    if ((val >= min_v) && (max_v <= 0.0f || val <= max_v)) {
       return getVectorFromDouble(val, field_idx);
     }
-  } else {
-    std::string_view s = value_json;
-    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
-      s.remove_prefix(1);
-      s.remove_suffix(1);
-    }
-    return getVectorFromString(s, field_idx);
+    return {};
   }
-  return {};
+  std::string_view s = raw;
+  if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+    s.remove_prefix(1);
+    s.remove_suffix(1);
+  }
+  return getVectorFromString(s, field_idx);
 }
 
 ebus::Sequence Command::getVectorFromDouble(double value,
