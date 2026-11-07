@@ -136,11 +136,9 @@ ebus::Sequence Command::buildWriteSequence(const CommandManager&,
   }
 
   // The weishaupt data bytes are crc placeholder + parameter + value +
-  // suffix; legacy write_cmd carries the real NN as a candidate.
-  const uint8_t derived_nn =
+  // suffix; NN is always derived (the guards above pin it at 9).
+  const uint8_t nn =
       static_cast<uint8_t>(wid_len_ - 2 + value.size() + suffix_size);
-  const uint8_t nn = has_wnn_ ? wnn_ : derived_nn;
-  if (nn != 9) return {};
 
   uint8_t frame[prefix_size + value_size + suffix_size];
   frame[0] = zz_;
@@ -225,8 +223,7 @@ ebus::Sequence Command::buildWriteCmd(ebus::ByteView value) const {
   buf[len++] = zz_;
   buf[len++] = wid_[0];
   buf[len++] = wid_[1];
-  // Legacy write_cmd NN wins over the derived one (byte-preserving).
-  buf[len++] = has_wnn_ ? wnn_ : static_cast<uint8_t>(data_len);
+  buf[len++] = static_cast<uint8_t>(data_len);
   if (wid_len_ > 2) std::memcpy(buf + len, wid_ + 2, wid_len_ - 2);
   len += wid_len_ - 2;
   if (!value.empty()) std::memcpy(buf + len, value.data(), value.size());
@@ -276,9 +273,9 @@ void Command::setLegacyReadCmd(ebus::ByteView bytes) {
 }
 
 void Command::setLegacyWriteCmd(ebus::ByteView bytes) {
-  // Wire hex: ZZ PB SB NN D... -> wid = PB SB D...; NN is kept as a
-  // candidate - the value length is unknowable from the hex alone, so
-  // build time decides between the stored and the derived NN.
+  // Wire hex: ZZ PB SB NN D... -> wid = PB SB D...; the NN byte is
+  // discarded - write NN is always derived at build time from the wid
+  // length plus the encoded value length.
   if (bytes.size() < 4) return;
   const size_t tail = bytes.size() - 4;
   if (2 + tail > 6) {
@@ -291,8 +288,6 @@ void Command::setLegacyWriteCmd(ebus::ByteView bytes) {
   wid_[1] = bytes[2];
   if (tail > 0) std::memcpy(wid_ + 2, bytes.data() + 4, tail);
   wid_len_ = static_cast<uint8_t>(2 + tail);
-  has_wnn_ = true;
-  wnn_ = bytes[3];
 }
 
 bool Command::getActive() const { return interval_ > 0; }

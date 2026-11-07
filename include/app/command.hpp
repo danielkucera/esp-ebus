@@ -192,10 +192,6 @@ class Command {
   uint8_t wid_[6] = {};
   bool has_nn_ovr_ = false;
   uint8_t nn_ovr_ = 0;
-  // Legacy write-NN candidate (in-memory only, never serialized): the
-  // effective write NN is wnn_ when set, the derived one otherwise.
-  bool has_wnn_ = false;
-  uint8_t wnn_ = 0;
   uint16_t interval_ = 60;
   bool master_ = false;
   command_types::WriteType write_type_ = command_types::WriteType::simple;

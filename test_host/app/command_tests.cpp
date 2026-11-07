@@ -348,7 +348,7 @@ TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams",
   }
 }
 
-TEST_CASE("Standard writes preserve bytes even for a 5023 prefix",
+TEST_CASE("Standard writes derive NN even for a 5023 prefix",
           "[Command]") {
   const char* prefixes[] = {"50b509040e3300", "70502309ab0500"};
   for (auto prefix : prefixes) {
@@ -365,18 +365,45 @@ TEST_CASE("Standard writes preserve bytes even for a 5023 prefix",
         cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2));
     uint8_t prefix_buf[8];
     size_t prefix_len = ebus::toBytes(prefix, prefix_buf, sizeof(prefix_buf));
+    // write_cmd NN is discarded; derived = wid_len-2 + value.size().
+    prefix_buf[3] = static_cast<uint8_t>(prefix_len - 2);
     auto expected = ebus::makeSequence(ebus::ByteView(prefix_buf, prefix_len));
     expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
     REQUIRE(frame == expected);
   }
 }
 
-TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
-  const std::string json = R"({
-  "key": "badwrite",
-  "name": "Bad",
+TEST_CASE("Structurally malformed weishaupt writes are rejected",
+          "[Command]") {
+  // NN is always derived now; rejection comes from structural checks
+  // (PB/SB, wid length, value length), not from a captured NN byte.
+  const char* bad_hex[] = {"70ff2309000500",   // PB != 0x50
+                           "7050ff09000500",   // SB != 0x23
+                           "705023090005",     // wid shorter than 5 bytes
+                           "7050230900050000"};  // wid longer than 5 bytes
+  for (auto hex : bad_hex) {
+    std::string json =
+        std::string(
+            R"({"key":"badwrite","name":"Bad","read_cmd":"085003019e","write_cmd":")") +
+        hex +
+        R"(","write_type":"weishaupt","interval":60,"master":false,)"
+        R"("fields":[{"name":"value","profile":"uint16","position":1}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+    const uint8_t value[] = {0xaa, 0x00};
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+                .empty());
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
+                .empty());
+  }
+
+  // Well-formed structure: 2-byte value builds the 13-byte frame,
+  // any other value length is rejected.
+  const std::string fixed_json = R"({
+  "key": "goodwrite",
+  "name": "Good",
   "read_cmd": "085003019e",
-  "write_cmd": "70502308ab0500",
+  "write_cmd": "70502309000500",
   "write_type": "weishaupt",
   "fields": [
     {
@@ -386,21 +413,9 @@ TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
     }
   ]
 })";
-  JsonReader reader(json);
-  Command cmd = Command::fromJson(reader);
-  const uint8_t value[] = {0xaa, 0x00};
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
-              .empty());
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
-              .empty());
-
-  // With the correct NN prefix only the value length remains to check.
-  std::string fixed_json = json;
-  const size_t nn_pos = fixed_json.find("70502308");
-  REQUIRE(nn_pos != std::string::npos);
-  fixed_json.replace(nn_pos, 8, "70502309");
   JsonReader fixed_reader(fixed_json);
   Command fixed_cmd = Command::fromJson(fixed_reader);
+  const uint8_t value[] = {0xaa, 0x00};
   REQUIRE(
       fixed_cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
           .size() == 13);
@@ -430,7 +445,8 @@ TEST_CASE("Write types reject unknown names and non-strings", "[Command]") {
   }
 }
 
-TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
+TEST_CASE("Explicit simple writes derive NN and preserve data bytes",
+          "[Command]") {
   const std::string json = R"({
   "key": "simple_type",
   "name": "Simple",
@@ -451,7 +467,9 @@ TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
   Command cmd = Command::fromJson(reader);
   REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
   const uint8_t value[] = {0xaa, 0};
-  const uint8_t prefix_bytes[] = {0x70, 0x50, 0x23, 0x09, 0xab, 0x05, 0x00};
+  // NN byte (09) is discarded: derived = wid_len-2 + 2 = 05; the D tail
+  // (ab 05 00) is preserved byte-exact.
+  const uint8_t prefix_bytes[] = {0x70, 0x50, 0x23, 0x05, 0xab, 0x05, 0x00};
   auto expected =
       ebus::makeSequence(ebus::ByteView(prefix_bytes, sizeof(prefix_bytes)));
   expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
