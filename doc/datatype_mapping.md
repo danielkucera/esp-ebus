@@ -197,6 +197,12 @@ Commands can override profile defaults per-field in `commands.json`:
 - This command overrides: min=15, max=20
 - Overrides are persisted to LittleFS and included in `/api/v1/app/commands` output
 
+`min`/`max` of `0` mean **no bound** during write validation (see
+[`doc/api.md`](api.md)): profiles whose upstream TypeSpec metadata was
+not popped by the generator carry `max = 0` (most plain `uint8`/`uint16`
+and all `char*`/`hex*` inventory rows) — those fields accept any value
+the datatype can hold.
+
 ### Raw values (sentinel bypass)
 
 Numeric datatypes map their replacement value (sentinel) to `null`:
@@ -226,6 +232,10 @@ value instead:
 
 ---
 
-Command communication modes and HTTP examples are documented in
-[`doc/commands.md`](commands.md). This document focuses on wire datatypes and
-the display/validation metadata attached to command fields.
+Command JSON schema (keys, `read_cmd`/`write_cmd` anatomy, NN rules,
+limits) is documented in [`doc/command-schema.md`](command-schema.md);
+runtime interfaces (HTTP/MQTT/cron writes, MQTT payload modes, Home
+Assistant discovery) in [`doc/api.md`](api.md); upload recipes in
+[`doc/commands.md`](commands.md). This document focuses on wire
+datatypes and the display/validation metadata attached to command
+fields.

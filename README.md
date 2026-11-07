@@ -32,7 +32,7 @@ It turns the adapter into a **network-connected eBUS interface** with TCP, MQTT,
   commands, MQTT/HA on-device, no external software needed.
 
 Details: wiki [5. Bridge mode](https://github.com/danielkucera/esp-ebus/wiki/5.-Bridge-mode) and
-[6. INTERNAL firmware](https://github.com/danielkucera/esp-ebus/wiki/6.-INTERNAL-firmware-current).
+[6. Internal mode](https://github.com/danielkucera/esp-ebus/wiki/6.-Internal-mode).
 
 ---
 
@@ -68,7 +68,9 @@ pio run -e esp32-c3-internal-ota --target upload
 
 The additional `esp32-c3-internal-simulation` environment enables virtual bus
 simulation. For command and HTTP API examples, see
-[`doc/commands.md`](doc/commands.md).
+[`doc/commands.md`](doc/commands.md); the normative API contract in
+[`doc/api.md`](doc/api.md) and the command JSON schema in
+[`doc/command-schema.md`](doc/command-schema.md).
 
 ---
 
