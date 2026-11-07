@@ -115,6 +115,7 @@ void dataLoop(void* arg) {
   (void)arg;
   for (;;) {
     dataProcess();
+    vTaskDelay(1);
   }
 }
 
