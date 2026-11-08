@@ -9,7 +9,7 @@ authoring and user overlays.
 
 ## ebus library native DataTypes
 
-Defined in [`lib/ebus/include/ebus/data_types.hpp`](../lib/ebus/include/ebus/data_types.hpp).
+Defined in `include/ebus/data_types.hpp`.
 Multi-byte numeric types use little-endian byte order by default; types ending
 in `R` reverse that byte order. `DATA2B` and `DATA2C` are signed fixed-point
 types with factors of 1/256 and 1/16, respectively.
@@ -25,6 +25,8 @@ types with factors of 1/256 and 1/16, respectively.
 | DATA2B / DATA2C | 2 bytes | Little-endian | Signed fixed-point: factors 1/256 / 1/16 |
 | DATA2BR / DATA2CR | 2 bytes | Big-endian | Reversed-byte-order DATA2B / DATA2C |
 | CHAR2 / HEX2 | 2 bytes | N/A | Character / hexadecimal data |
+| UINT24 / INT24 | 3 bytes | Little-endian | |
+| UINT24R / INT24R | 3 bytes | Big-endian | Reversed byte order |
 | CHAR3 / HEX3 | 3 bytes | N/A | Character / hexadecimal data |
 | UINT32 / INT32 | 4 bytes | Little-endian | |
 | UINT32R / INT32R | 4 bytes | Big-endian | Reversed byte order |
@@ -57,12 +59,13 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | UIN | UINT16 | vaillant/_templates.tsp | Little-endian unsigned int |
 | SIN | INT16 | vaillant/_templates.tsp | Little-endian signed int |
 | UIR | UINT16R | vaillant/_templates.tsp | Big-endian unsigned int (reversed of UIN) |
+| U3N / U3R | UINT24 / UINT24R | ebus-typespec/lib/types.tsp | 24-bit unsigned, LE / BE |
+| S3N / S3R | INT24 / INT24R | ebus-typespec/lib/types.tsp | 24-bit signed, LE / BE |
 | ULG | UINT32 | vaillant/_templates.tsp | Little-endian unsigned long |
 | EXP / EXR | FLOAT4 / FLOAT4R | vaillant/_templates.tsp | IEEE 754 binary32 (EXR reversed byte order) |
 | BCD | BCD | _templates.tsp | Single-byte BCD |
 
-> Endianness verified against the vendored ebusd 26.1 sources
-> ([`doc/private/ebusd`](../private/ebusd), `src/lib/ebus/datatype.cpp`):
+> Endianness verified against the vendored ebusd 26.1 sources:
 > `UIR`, `SIR`, `ULR`, `EXR` carry the `REV` flag — "reverted binary
 > representation (most significant byte first)" — while `UIN`, `SIN`,
 > `ULG`, `EXP` do not. `ebus-typespec/lib/types.tsp` agrees
@@ -73,6 +76,7 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | ebusd TypeSpec | Description | Action |
 |---|---|---|
 | BCD3 / BCD4 | 3- or 4-byte BCD | Requires explicit decoding; a profile alone does not provide multi-byte BCD decoding |
+| U3L / U3B / S3L / S3B | 24-bit integers without a null sentinel | No native "no replacement" DataType — mapped to raw CHAR3 |
 | PIN | BCD password representation | Requires protocol-specific decoding |
 | BTI / BDA / BDY | Binary time / date / weekday | Requires protocol-specific field decoding |
 | HDA3 / TTM / VTI / VTM | Holiday date / timer encodings | Requires protocol-specific field decoding |

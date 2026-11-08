@@ -1429,8 +1429,8 @@ class TspParser:
             "FLT": "INT16", "FLR": "INT16R",
             # 3 byte
             "BCD3": "CHAR3", "HCD3": "CHAR3",
-            "U3N": "CHAR3", "U3R": "CHAR3", "U3L": "CHAR3", "U3B": "CHAR3",
-            "S3N": "CHAR3", "S3R": "CHAR3", "S3L": "CHAR3", "S3B": "CHAR3",
+            "U3N": "UINT24", "U3R": "UINT24R", "U3L": "CHAR3", "U3B": "CHAR3",
+            "S3N": "INT24", "S3R": "INT24R", "S3L": "CHAR3", "S3B": "CHAR3",
             # 4 byte
             "ULG": "UINT32", "ULR": "UINT32R", "U4L": "UINT32", "U4B": "UINT32R",
             "SLG": "INT32", "SLR": "INT32R", "S4L": "INT32", "S4B": "INT32R",

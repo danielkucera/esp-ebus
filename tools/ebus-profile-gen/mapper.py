@@ -47,15 +47,16 @@ TYPE_MAP: Dict[str, str] = {
     "FLR": "INT16R",   # same, big-endian
     "INT16": "INT16",
     "UINT16": "UINT16",
-    # 3 byte types — library has no 3-byte numeric; map to raw CHAR3
+    # 3 byte types — U3N/S3N families have native 24-bit DataTypes;
+    # BCD3/HCD3 and the no-sentinel U3L/U3B/S3L/S3B variants do not
     "BCD3": "CHAR3",   # 3-byte BCD (cntstarts, cnthours): no native type yet
     "HCD3": "CHAR3",   # 3-byte HCD: no native type yet
-    "U3N": "CHAR3",
-    "U3R": "CHAR3",
+    "U3N": "UINT24",
+    "U3R": "UINT24R",
     "U3L": "CHAR3",
     "U3B": "CHAR3",
-    "S3N": "CHAR3",
-    "S3R": "CHAR3",
+    "S3N": "INT24",
+    "S3R": "INT24R",
     "S3L": "CHAR3",
     "S3B": "CHAR3",
     "INT32": "INT32",
@@ -146,7 +147,7 @@ DATATYPE_SIZE: Dict[str, int] = {
     "UINT16": 2, "UINT16R": 2, "INT16": 2, "INT16R": 2, "DATA2B": 2, "DATA2BR": 2,
     "DATA2C": 2, "DATA2CR": 2, "CHAR2": 2, "HEX2": 2,
     # 3 bytes
-    "CHAR3": 3, "HEX3": 3,
+    "UINT24": 3, "UINT24R": 3, "INT24": 3, "INT24R": 3, "CHAR3": 3, "HEX3": 3,
     # 4 bytes
     "UINT32": 4, "UINT32R": 4, "INT32": 4, "INT32R": 4, "FLOAT4": 4, "FLOAT4R": 4,
     "CHAR4": 4, "HEX4": 4,
@@ -170,7 +171,7 @@ SUPPORTED_DATATYPES: set = {
     "UINT16", "UINT16R", "INT16", "INT16R", "DATA2B", "DATA2BR",
     "DATA2C", "DATA2CR", "CHAR2", "HEX2",
     # 3 bytes
-    "CHAR3", "HEX3",
+    "UINT24", "UINT24R", "INT24", "INT24R", "CHAR3", "HEX3",
     # 4 bytes
     "UINT32", "UINT32R", "INT32", "INT32R", "FLOAT4", "FLOAT4R",
     "CHAR4", "HEX4",
@@ -515,13 +516,17 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "DATA1B": "data1b",
         "UINT8": "uint8",
         "UINT16": "uint16",
+        "UINT24": "uint24",
         "UINT32": "uint32",
         "INT8": "int8",
         "INT16": "int16",
+        "INT24": "int24",
         "INT32": "int32",
         "FLOAT4": "float4",
         "UINT16R": "uint16r",
+        "UINT24R": "uint24r",
         "INT16R": "int16r",
+        "INT24R": "int24r",
         "UINT32R": "uint32r",
         "INT32R": "int32r",
         "FLOAT4R": "float4r",
