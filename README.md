@@ -60,7 +60,19 @@ To flash over a connected serial port, use the matching environment and set
 pio run -e esp32-c3 --target upload
 ```
 
-INTERNAL firmware can also be uploaded over OTA to `esp-ebus.local`:
+or
+
+```bash
+pio run -e esp32-c3-internal --target upload
+```
+
+The firmware can also be uploaded over OTA to `esp-ebus.local`:
+
+```bash
+pio run -e esp32-c3-ota --target upload
+```
+
+or
 
 ```bash
 pio run -e esp32-c3-internal-ota --target upload
