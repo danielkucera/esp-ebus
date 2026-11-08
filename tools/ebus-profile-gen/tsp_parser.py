@@ -34,6 +34,10 @@ except ImportError:  # script-style execution
 # Matches a decorator line: @name(args) or @name
 _DECORATOR_RE = re.compile(r"^\s*@(\w+)(?:\(([^)]*)\))?\s*$")
 
+# Matches each decorator occurrence anywhere on a line — several decorators
+# may share one physical line (e.g. @minValue(0) @maxValue(32) @step(0.5))
+_DECORATOR_ANY_RE = re.compile(r"@(\w+)(?:\(([^)]*)\))?")
+
 # Matches an alias: alias Name = value;
 _ALIAS_RE = re.compile(r"^\s*alias\s+(\w+)\s*=\s*(.+?)\s*;?\s*$")
 
@@ -504,12 +508,14 @@ class TspParser:
             if m:
                 decorators: List[Dict[str, Any]] = []
                 while i < len(lines):
-                    m = _DECORATOR_RE.match(lines[i])
-                    if not m:
+                    found = False
+                    for dm in _DECORATOR_ANY_RE.finditer(lines[i]):
+                        decorators.append(
+                            {"name": dm.group(1), "args": _parse_decorator_args(dm.group(2))}
+                        )
+                        found = True
+                    if not found:
                         break
-                    name = m.group(1)
-                    args = _parse_decorator_args(m.group(2))
-                    decorators.append({"name": name, "args": args})
                     i += 1
 
                 if i >= len(lines):
@@ -645,7 +651,8 @@ class TspParser:
                     scalar = self._build_scalar(
                         sm.group(1), sm.group(2), decorators, ir, fpath, lineno, namespace
                     )
-                    ir["scalars"][sm.group(1)] = scalar
+                    if sm.group(1) not in ir["scalars"]:
+                        ir["scalars"][sm.group(1)] = scalar
                     i += 1
                     continue
 
@@ -672,7 +679,8 @@ class TspParser:
                 scalar = self._build_scalar(
                     sm.group(1), sm.group(2), [], ir, fpath, lineno, namespace
                 )
-                ir["scalars"][sm.group(1)] = scalar
+                if sm.group(1) not in ir["scalars"]:
+                    ir["scalars"][sm.group(1)] = scalar
                 i += 1
                 continue
 
@@ -1289,7 +1297,7 @@ class TspParser:
         if existing is not None and existing.get("base_type") != base_type:
             self.log.warn(
                 "parse",
-                "scalar redefined with a different base type; last definition wins",
+                "scalar redefined with a different base type; first (nearest) definition wins",
                 source=_short_path(fpath),
                 line=line_no,
                 namespace=namespace,
