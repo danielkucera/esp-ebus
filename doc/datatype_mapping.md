@@ -54,7 +54,7 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | INT32 | INT32 | _templates.tsp | 32-bit signed |
 | UINT32 | UINT32 | _templates.tsp | 32-bit unsigned |
 | FLT / FLOAT | FLOAT4 | _templates.tsp | 32-bit IEEE 754 float |
-| STR | CHAR1-8 | _templates.tsp | String data, represented by a fixed-size CHAR type |
+| STR | CHAR1-16 | _templates.tsp | String data, fixed-size CHAR via `@maxLength`; widths >16 (e.g. 21-byte serial numbers) stay unsupported — the protocol caps data at 16 bytes (spec 5.6) |
 | IGN | (skip) | _templates.tsp | Ignore field |
 | UIN | UINT16 | vaillant/_templates.tsp | Little-endian unsigned int |
 | SIN | INT16 | vaillant/_templates.tsp | Little-endian signed int |
@@ -64,6 +64,7 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | ULG | UINT32 | vaillant/_templates.tsp | Little-endian unsigned long |
 | EXP / EXR | FLOAT4 / FLOAT4R | vaillant/_templates.tsp | IEEE 754 binary32 (EXR reversed byte order) |
 | BCD | BCD | _templates.tsp | Single-byte BCD |
+| HCD | UINT8 | ebus-typespec/lib/types.tsp | 1-byte hex-coded decimal 0-99 (0x00-0x63); the byte value is the value |
 
 > Endianness verified against the vendored ebusd 26.1 sources:
 > `UIR`, `SIR`, `ULR`, `EXR` carry the `REV` flag — "reverted binary
@@ -75,13 +76,15 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 
 | ebusd TypeSpec | Description | Action |
 |---|---|---|
-| BCD3 / BCD4 | 3- or 4-byte BCD | Requires explicit decoding; a profile alone does not provide multi-byte BCD decoding |
+| BCD3 | 3-byte BCD (cntstarts, cnthours) | No native multi-byte BCD — mapped to raw CHAR3 (shipped counter rendering) |
+| BCD2 / BCD4 | 2-/4-byte BCD digit bytes | No native multi-byte BCD — mapped to HEX2/HEX4 (raw hex passthrough; a binary read would be wrong) |
+| HCD2 / HCD3 / HCD4 | Hex-coded decimal, each byte 0x00-0x63 | No native HCD decode — mapped to HEX2/HEX3/HEX4 (raw hex passthrough; a binary/char read would be wrong) |
 | U3L / U3B / S3L / S3B | 24-bit integers without a null sentinel | No native "no replacement" DataType — mapped to raw CHAR3 |
 | PIN | BCD password representation | Requires protocol-specific decoding |
 | BTI / BDA / BDY | Binary time / date / weekday | Requires protocol-specific field decoding |
 | HDA3 / TTM / VTI / VTM | Holiday date / timer encodings | Requires protocol-specific field decoding |
 | HCL / VA | Not defined in vendored ebusd 26.1 (`datatype.cpp`) or any vendored TypeSpec | Stale entries — confirm origin before mapping |
-| BI0-BI2 | Bit extraction | Requires explicit bit extraction; profiles do not define bit fields |
+| BI0-BI7 / boolean | Bit extraction | BI runs collapse into one UINT8 field with a per-bit `bits` map; plain boolean/BOOL commands are gated — no `ebus::DataType` BOOL exists |
 
 ---
 

@@ -1432,17 +1432,17 @@ class TspParser:
             "U2L": "UINT16", "U2B": "UINT16R",
             "SIN": "INT16", "SIR": "INT16R",
             "S2L": "INT16", "S2B": "INT16R",
-            "BCD2": "UINT16", "HCD2": "UINT16",
+            "BCD2": "HEX2", "HCD2": "HEX2",
             "D2B": "DATA2B", "D2C": "DATA2C",
             "FLT": "INT16", "FLR": "INT16R",
             # 3 byte
-            "BCD3": "CHAR3", "HCD3": "CHAR3",
+            "BCD3": "CHAR3", "HCD3": "HEX3",
             "U3N": "UINT24", "U3R": "UINT24R", "U3L": "CHAR3", "U3B": "CHAR3",
             "S3N": "INT24", "S3R": "INT24R", "S3L": "CHAR3", "S3B": "CHAR3",
             # 4 byte
             "ULG": "UINT32", "ULR": "UINT32R", "U4L": "UINT32", "U4B": "UINT32R",
             "SLG": "INT32", "SLR": "INT32R", "S4L": "INT32", "S4B": "INT32R",
-            "BCD4": "UINT32", "HCD4": "UINT32",
+            "BCD4": "HEX4", "HCD4": "HEX4",
             "EXP": "FLOAT4", "EXR": "FLOAT4R",
             # String
             "STR": "CHAR1", "NTS": "CHAR1", "IGN": "CHAR1", "HEX": "HEX1",

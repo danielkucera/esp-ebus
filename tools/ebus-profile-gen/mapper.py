@@ -39,8 +39,8 @@ TYPE_MAP: Dict[str, str] = {
     "SIR": "INT16R",
     "S2L": "INT16",
     "S2B": "INT16R",
-    "BCD2": "UINT16",  # 2-byte BCD; no native type, raw UINT16
-    "HCD2": "UINT16",  # 2-byte HCD; no native type, raw UINT16
+    "BCD2": "HEX2",    # 2-byte BCD digit bytes; no native decode → raw hex
+    "HCD2": "HEX2",    # 2-byte HCD digit bytes (0x00-0x63 each) → raw hex
     "D2B": "DATA2B",   # 2-byte signed fixed-point /256 (ebus::DataType::data2b)
     "D2C": "DATA2C",   # 2-byte signed fixed-point /16 (ebus::DataType::data2c)
     "FLT": "INT16",    # 2-byte /1000 — INT16; no dedicated FLT type
@@ -48,9 +48,9 @@ TYPE_MAP: Dict[str, str] = {
     "INT16": "INT16",
     "UINT16": "UINT16",
     # 3 byte types — U3N/S3N families have native 24-bit DataTypes;
-    # BCD3/HCD3 and the no-sentinel U3L/U3B/S3L/S3B variants do not
-    "BCD3": "CHAR3",   # 3-byte BCD (cntstarts, cnthours): no native type yet
-    "HCD3": "CHAR3",   # 3-byte HCD: no native type yet
+    # the no-sentinel U3L/U3B/S3L/S3B variants do not
+    "BCD3": "CHAR3",   # 3-byte BCD (cntstarts, cnthours): shipped raw CHAR3
+    "HCD3": "HEX3",    # 3-byte HCD digit bytes; no native decode → raw hex
     "U3N": "UINT24",
     "U3R": "UINT24R",
     "U3L": "CHAR3",
@@ -70,8 +70,8 @@ TYPE_MAP: Dict[str, str] = {
     "SLR": "INT32R",
     "S4L": "INT32",
     "S4B": "INT32R",
-    "BCD4": "UINT32",  # 4-byte BCD/HCD: no native type, raw UINT32
-    "HCD4": "UINT32",
+    "BCD4": "HEX4",    # 4-byte BCD/HCD digit bytes; no native decode → raw hex
+    "HCD4": "HEX4",
     "EXP": "FLOAT4",
     "EXR": "FLOAT4R",
     "FLOAT4": "FLOAT4",
@@ -142,7 +142,7 @@ TYPE_MAP: Dict[str, str] = {
 # Used to compute the eBUS write NN byte: NN = 3 + data_byte_count.
 DATATYPE_SIZE: Dict[str, int] = {
     # 1 byte
-    "BCD": 1, "UINT8": 1, "INT8": 1, "DATA1B": 1, "DATA1C": 1, "CHAR1": 1, "HEX1": 1, "BOOL": 1,
+    "BCD": 1, "UINT8": 1, "INT8": 1, "DATA1B": 1, "DATA1C": 1, "CHAR1": 1, "HEX1": 1,
     # 2 bytes
     "UINT16": 2, "UINT16R": 2, "INT16": 2, "INT16R": 2, "DATA2B": 2, "DATA2BR": 2,
     "DATA2C": 2, "DATA2CR": 2, "CHAR2": 2, "HEX2": 2,
@@ -166,7 +166,7 @@ DATATYPE_SIZE: Dict[str, int] = {
 # Source of truth: ebus::DataType enum in include/ebus/data_types.hpp.
 SUPPORTED_DATATYPES: set = {
     # 1 byte
-    "BCD", "UINT8", "INT8", "DATA1B", "DATA1C", "BOOL", "CHAR1", "HEX1",
+    "BCD", "UINT8", "INT8", "DATA1B", "DATA1C", "CHAR1", "HEX1",
     # 2 bytes
     "UINT16", "UINT16R", "INT16", "INT16R", "DATA2B", "DATA2BR",
     "DATA2C", "DATA2CR", "CHAR2", "HEX2",
