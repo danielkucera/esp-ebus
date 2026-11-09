@@ -180,7 +180,22 @@ MatchingCommands CommandManager::findPassiveCommands(ebus::ByteView master) {
 int64_t CommandManager::loadCommands() {
   if (!ensureLittlefsMounted()) return -1;
   std::remove(commandsTempFilePath());
-  return loadCommandsFrom(commandsFilePath());
+  int64_t count = loadCommandsFrom(commandsFilePath());
+  // One-shot schema migration: a load that consumed pre-split input (legacy
+  // read_cmd rows or the retired id/wid schema) rewrites the file once so
+  // subsequent boots read the split schema directly.
+  if (count > 0 && legacy_rewrite_pending_) {
+    legacy_rewrite_pending_ = false;
+    if (saveCommands() < 0) {
+      logger.warn(
+          "CommandManager: rewriting legacy commands file failed; will retry "
+          "on next load");
+    } else {
+      logger.info(
+          "CommandManager: rewrote legacy commands file in split schema");
+    }
+  }
+  return count;
 }
 
 int64_t CommandManager::loadCommandsFrom(const char* path) {
@@ -233,18 +248,19 @@ int64_t CommandManager::saveCommands() const {
     // Header row for tabular format. The optional nn column is only
     // present when at least one command carries an explicit read-NN
     // override (derived NN is never serialized); write_type is always
-    // the trailing column.
+    // the trailing column. pbsb/dx and wpbsb/wdx are the split address
+    // halves (read id = pbsb + dx, write id = wpbsb + wdx).
     const bool any_nn =
         std::any_of(commands_.begin(), commands_.end(),
                     [](const Command& c) { return c.hasNnOverride(); });
     {
       auto header_array = writer.arrayScope();
       static const char* header_nn[] = {
-          "key", "name",     "zz",     "id",     "nn",
-          "wid", "interval", "master", "fields", "write_type"};
-      static const char* header[] = {"key",    "name",   "zz",
-                                     "id",     "wid",    "interval",
-                                     "master", "fields", "write_type"};
+          "key",   "name", "zz",       "pbsb",   "dx",     "nn",
+          "wpbsb", "wdx",  "interval", "master", "fields", "write_type"};
+      static const char* header[] = {
+          "key", "name",     "zz",     "pbsb",   "dx",        "wpbsb",
+          "wdx", "interval", "master", "fields", "write_type"};
       if (any_nn) {
         for (const char* h : header_nn) writer.writeValue(h);
       } else {
@@ -258,7 +274,9 @@ int64_t CommandManager::saveCommands() const {
       writer.writeValue(c.getKey());
       writer.writeValue(c.getName());
       writer.writeHexValue(c.getZz());
-      writer.writeHexValue(c.getId());
+      const ebus::ByteView id_view = c.getId();
+      writer.writeHexValue(ebus::range(id_view, 0, 2));
+      writer.writeHexValue(ebus::range(id_view, 2, id_view.size()));
       if (any_nn) {
         if (c.hasNnOverride()) {
           writer.writeHexValue(c.getNn());
@@ -267,8 +285,11 @@ int64_t CommandManager::saveCommands() const {
         }
       }
       if (c.hasWriteCmd()) {
-        writer.writeHexValue(c.getWid());
+        const ebus::ByteView wid_view = c.getWid();
+        writer.writeHexValue(ebus::range(wid_view, 0, 2));
+        writer.writeHexValue(ebus::range(wid_view, 2, wid_view.size()));
       } else {
+        writer.writeValue("");
         writer.writeValue("");
       }
       writer.writeValue(c.getInterval());
@@ -369,12 +390,21 @@ void CommandManager::fetchCommands(
       writer.writeField("key", c->getKey());
       writer.writeField("name", c->getName());
       writer.writeHexField("zz", c->getZz());
-      writer.writeHexField("id", c->getId());
+      const ebus::ByteView id_view = c->getId();
+      writer.writeHexField("pbsb", ebus::range(id_view, 0, 2));
+      if (id_view.size() > 2) {
+        writer.writeHexField("dx", ebus::range(id_view, 2, id_view.size() - 2));
+      }
       if (c->hasNnOverride()) {
         writer.writeHexField("nn", c->getNn());
       }
       if (c->hasWriteCmd()) {
-        writer.writeHexField("wid", c->getWid());
+        const ebus::ByteView wid_view = c->getWid();
+        writer.writeHexField("wpbsb", ebus::range(wid_view, 0, 2));
+        if (wid_view.size() > 2) {
+          writer.writeHexField("wdx",
+                               ebus::range(wid_view, 2, wid_view.size() - 2));
+        }
       }
       writer.writeField("interval", c->getInterval());
       writer.writeField("master", c->getMaster());
@@ -729,6 +759,11 @@ void CommandManager::deserializeCommands(FILE* file) {
   bool header_seen = false;
   bool legacy_tabular = false;
   bool has_nn_col = false;
+  bool has_split_cols = false;
+  // Committed only on a complete parse (early error returns leave the
+  // member false so a truncated file is never rewritten from a partial load).
+  bool saw_legacy = false;
+  legacy_rewrite_pending_ = false;
 
   auto feed_file = [&]() -> bool {
     if (eof) return false;
@@ -793,7 +828,8 @@ void CommandManager::deserializeCommands(FILE* file) {
       if (!header_seen) {
         header_seen = true;
         // Schema detection: legacy headers carry read_cmd, the compact
-        // schema carries zz; the nn column is optional (see saveCommands).
+        // pre-split schema carries id, the split schema carries pbsb; the
+        // nn column is optional (see saveCommands).
         row_reader.reset();
         if (row_reader.next() == ebus::detail::JsonReader::Token::array_start) {
           while (row_reader.next() == ebus::detail::JsonReader::Token::string) {
@@ -801,9 +837,12 @@ void CommandManager::deserializeCommands(FILE* file) {
               legacy_tabular = true;
             } else if (row_reader.value() == "nn") {
               has_nn_col = true;
+            } else if (row_reader.value() == "pbsb") {
+              has_split_cols = true;
             }
           }
         }
+        if (!has_split_cols) saw_legacy = true;
         continue;
       }
       // Pre-extract key to drop any stale field overrides for that key
@@ -816,12 +855,15 @@ void CommandManager::deserializeCommands(FILE* file) {
         }
       }
       row_reader.reset();
-      insertCommand(
-          Command::fromTabular(row_reader, legacy_tabular, has_nn_col));
+      insertCommand(Command::fromTabular(row_reader, legacy_tabular, has_nn_col,
+                                         has_split_cols));
       loaded_count++;
     } else if (token == ebus::detail::JsonReader::Token::object_start) {
       row_reader.reset();
-      std::string_view eval_error = Command::evaluate(row_reader);
+      bool used_legacy = false;
+      std::string_view eval_error =
+          Command::evaluate(row_reader, true, &used_legacy);
+      if (used_legacy) saw_legacy = true;
       if (eval_error.empty()) {
         // Pre-extract key to drop stale overrides before fromJson()
         // repopulates.
@@ -846,6 +888,8 @@ void CommandManager::deserializeCommands(FILE* file) {
       }
     }
   }
+
+  legacy_rewrite_pending_ = saw_legacy;
 
   char res_buf[64];
   snprintf(res_buf, sizeof(res_buf),

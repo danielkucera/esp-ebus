@@ -113,12 +113,20 @@ TEST_CASE("Command toJson serializes fields", "[Command]") {
     writer.writeField("key", cmd.getKey());
     writer.writeField("name", cmd.getName());
     writer.writeHexField("zz", cmd.getZz());
-    writer.writeHexField("id", cmd.getId());
+    writer.writeHexField("pbsb", ebus::range(cmd.getId(), 0, 2));
+    if (cmd.getId().size() > 2) {
+      writer.writeHexField("dx",
+                           ebus::range(cmd.getId(), 2, cmd.getId().size() - 2));
+    }
     if (cmd.hasNnOverride()) {
       writer.writeHexField("nn", cmd.getNn());
     }
     if (cmd.hasWriteCmd()) {
-      writer.writeHexField("wid", cmd.getWid());
+      writer.writeHexField("wpbsb", ebus::range(cmd.getWid(), 0, 2));
+      if (cmd.getWid().size() > 2) {
+        writer.writeHexField(
+            "wdx", ebus::range(cmd.getWid(), 2, cmd.getWid().size() - 2));
+      }
     }
     writer.writeField("interval", cmd.getInterval());
 
@@ -141,9 +149,10 @@ TEST_CASE("Command toJson serializes fields", "[Command]") {
   REQUIRE(out.find("\"key\":\"01\"") != std::string::npos);
   REQUIRE(out.find("\"name\":\"Test\"") != std::string::npos);
   REQUIRE(out.find("\"zz\":\"fe\"") != std::string::npos);
-  REQUIRE(out.find("\"id\":\"0700\"") != std::string::npos);
+  REQUIRE(out.find("\"pbsb\":\"0700\"") != std::string::npos);
   REQUIRE(out.find("\"nn\":\"09\"") != std::string::npos);
   REQUIRE(out.find("\"wid\"") == std::string::npos);
+  REQUIRE(out.find("\"wpbsb\"") == std::string::npos);
   REQUIRE(out.find("\"fields\"") != std::string::npos);
   REQUIRE(out.find("\"profile\":\"data2b_celsius\"") != std::string::npos);
   REQUIRE(out.find("\"position\":1") != std::string::npos);
@@ -480,8 +489,9 @@ TEST_CASE("Command multi-field object write encodes every field", "[Command]") {
   "key": "mf",
   "name": "MF",
   "zz": "50",
-  "id": "0301",
-  "wid": "b5090400",
+  "pbsb": "0301",
+  "wpbsb": "b509",
+  "wdx": "0400",
   "interval": 0,
   "master": false,
   "fields": [
@@ -522,8 +532,9 @@ TEST_CASE("Command multi-field write auto-pads ign fillers", "[Command]") {
   "key": "ignmf",
   "name": "IgnMF",
   "zz": "50",
-  "id": "0301",
-  "wid": "b5090400",
+  "pbsb": "0301",
+  "wpbsb": "b509",
+  "wdx": "0400",
   "interval": 0,
   "master": false,
   "fields": [
@@ -564,8 +575,9 @@ TEST_CASE("Command single-field accepts scalar and object forms", "[Command]") {
   "key": "sf",
   "name": "SF",
   "zz": "50",
-  "id": "0301",
-  "wid": "b5090400",
+  "pbsb": "0301",
+  "wpbsb": "b509",
+  "wdx": "0400",
   "interval": 0,
   "master": false,
   "fields": [
@@ -605,10 +617,11 @@ TEST_CASE("Tabular write types reject boolean and unknown values",
 }
 
 TEST_CASE("Command compact schema derives read NN", "[Command]") {
-  std::string json = R"({"key":"01","name":"T","zz":"fe","id":"b51601",)"
-                     R"("interval":0,"master":true,)"
-                     R"("fields":[{"name":"v","profile":"uint8","position":1,)"
-                     R"("ha_profile":""}]})";
+  std::string json =
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"b516","dx":"01",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
   JsonReader reader(json);
   Command cmd = Command::fromJson(reader);
 
@@ -627,7 +640,7 @@ TEST_CASE("Command compact schema derives read NN", "[Command]") {
 
 TEST_CASE("Command explicit nn overrides derived NN", "[Command]") {
   std::string json =
-      R"({"key":"01","name":"T","zz":"fe","id":"b51601","nn":"03",)"
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"b516","dx":"01","nn":"03",)"
       R"("interval":0,"master":true,)"
       R"("fields":[{"name":"v","profile":"uint8","position":1,)"
       R"("ha_profile":""}]})";
@@ -647,7 +660,7 @@ TEST_CASE("Command explicit nn overrides derived NN", "[Command]") {
 
 TEST_CASE("Command buildWriteCmd derives NN from value", "[Command]") {
   std::string json =
-      R"({"key":"32","name":"W","zz":"50","wid":"b5090e3300",)"
+      R"({"key":"32","name":"W","zz":"50","wpbsb":"b509","wdx":"0e3300",)"
       R"("interval":0,"master":false,)"
       R"("fields":[{"name":"v","profile":"data1c_celsius","position":1,)"
       R"("ha_profile":""}]})";
@@ -664,7 +677,7 @@ TEST_CASE("Command buildWriteCmd derives NN from value", "[Command]") {
 }
 
 TEST_CASE("Command buildWriteCmd is empty for read-only command", "[Command]") {
-  std::string json = R"({"key":"01","name":"T","zz":"fe","id":"0700",)"
+  std::string json = R"({"key":"01","name":"T","zz":"fe","pbsb":"0700",)"
                      R"("interval":0,"master":true,)"
                      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
                      R"("ha_profile":""}]})";
@@ -760,9 +773,9 @@ TEST_CASE("Command matches requires id and exact bytes", "[Command]") {
   }
 }
 
-TEST_CASE("Command evaluate accepts compact schema", "[Command]") {
+TEST_CASE("Command evaluate accepts split schema", "[Command]") {
   std::string json =
-      R"({"key":"01","name":"T","zz":"fe","id":"0700","wid":"07000e",)"
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","wpbsb":"0700","wdx":"0e",)"
       R"("interval":0,"master":true,)"
       R"("fields":[{"name":"v","profile":"data2b_celsius","position":1,)"
       R"("ha_profile":"sensor_temperature"}]})";
@@ -770,13 +783,40 @@ TEST_CASE("Command evaluate accepts compact schema", "[Command]") {
   REQUIRE(Command::evaluate(reader).empty());
 
   std::string no_zz =
-      R"({"key":"01","name":"T","id":"0700","interval":0,"master":true,)"
+      R"({"key":"01","name":"T","pbsb":"0700","interval":0,"master":true,)"
       R"("fields":[{"name":"v","profile":"uint8","position":1,)"
       R"("ha_profile":""}]})";
   JsonReader r2(no_zz);
   std::string_view error = Command::evaluate(r2);
   REQUIRE_FALSE(error.empty());
   REQUIRE(error.find("zz") != std::string_view::npos);
+}
+
+TEST_CASE("Command evaluate rejects retired id/wid keys", "[Command]") {
+  const char* fixtures[] = {
+      R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+      R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+      R"("position":1,"ha_profile":""}]})",
+      R"({"key":"01","name":"T","zz":"fe","wid":"07000e","interval":0,)"
+      R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+      R"("position":1,"ha_profile":""}]})",
+  };
+  for (const char* json : fixtures) {
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+    REQUIRE(error.find("Unsupported key") != std::string_view::npos);
+  }
+  // dx/wdx without their PBSB half is rejected too.
+  std::string orphan_dx =
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"","dx":"0d3300",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(orphan_dx);
+  std::string_view error = Command::evaluate(reader);
+  REQUIRE_FALSE(error.empty());
+  REQUIRE(error.find("dx") != std::string_view::npos);
 }
 
 TEST_CASE("Command bits map parses and expands payload per bit", "[Command]") {
@@ -822,7 +862,7 @@ TEST_CASE("Command bits map parses and expands payload per bit", "[Command]") {
 TEST_CASE("Command evaluate rejects malformed bits maps", "[Command]") {
   SECTION("Non-object bits") {
     std::string json =
-        R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+        R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","interval":0,)"
         R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
         R"("position":1,"ha_profile":"binary_sensor","bits":"nope"}]})";
     JsonReader reader(json);
@@ -833,7 +873,7 @@ TEST_CASE("Command evaluate rejects malformed bits maps", "[Command]") {
 
   SECTION("Non-dense bit indices") {
     std::string json =
-        R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+        R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","interval":0,)"
         R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
         R"("position":1,"ha_profile":"binary_sensor",)"
         R"("bits":{"bi":0,"bi_2":2}}]})";
@@ -844,7 +884,7 @@ TEST_CASE("Command evaluate rejects malformed bits maps", "[Command]") {
 
   SECTION("More than 8 bits") {
     std::string json =
-        R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+        R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","interval":0,)"
         R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
         R"("position":1,"ha_profile":"binary_sensor","bits":{)";
     for (int i = 0; i < 9; ++i) {

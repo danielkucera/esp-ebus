@@ -757,8 +757,13 @@ def commands_to_flat_entries(
 ) -> List[Dict[str, Any]]:
     """Convert FamilyIR commands to config/simulation.json schema entries.
 
-    {key, name, zz, id, [nn], wid, interval, master,
+    {key, name, zz, pbsb, [dx], [nn], wpbsb, [wdx], interval, master,
      fields: [{name, profile, position, ha_profile, [bits]}]}
+
+    Split addressing: the read id is pbsb + dx (write id = wpbsb + wdx);
+    pbsb is always present (empty for write-only commands) while the dx/wdx
+    tails appear only when they carry bytes. NN stays runtime-derived
+    (len(d) + value), with nn only for wire quirks.
     """
     log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
@@ -805,9 +810,10 @@ def commands_to_flat_entries(
                     data_byte_count += DATATYPE_SIZE.get(dt, 0)
         nn_write = meta.get("write_nn", 3 + data_byte_count)
 
-        # Compact schema: zz + id (read) / wid (write); NN is derived at
-        # runtime from the id length. id/wid are empty when the command
-        # has no read/write side (write-only commands carry wid only).
+        # Split schema: zz + pbsb/dx (read) / wpbsb/wdx (write); NN is
+        # derived at the runtime from the dx length (plus the value length
+        # for writes). The halves are empty when the command has no
+        # read/write side (write-only commands carry wpbsb/wdx only).
         # The SB byte (pb) is per-direction: read and write parents may
         # use different PBSB (e.g. *r B504 19 / *w B505 2e).
         zz_hex = f"{zz:02x}"
@@ -923,16 +929,22 @@ def commands_to_flat_entries(
             )
 
         command_name = _format_command_name(c.name, namespace)
+        # Split schema keys: read id = pbsb + dx, write id = wpbsb + wdx.
+        # id_hex/wid_hex are always PB SB + tail (>= 4 hex chars) when set.
         entry: Dict[str, Any] = {
             "key": key,
             "name": command_name,
             "zz": zz_hex,
-            "id": id_hex,
+            "pbsb": id_hex[:4] if id_hex else "",
         }
+        if len(id_hex) > 4:
+            entry["dx"] = id_hex[4:]
         if nn_hex:
             entry["nn"] = nn_hex
         if wid_hex:
-            entry["wid"] = wid_hex
+            entry["wpbsb"] = wid_hex[:4]
+            if len(wid_hex) > 4:
+                entry["wdx"] = wid_hex[4:]
         entry["interval"] = 0  # Default to passive only
         entry["master"] = False  # Default
         entry["fields"] = fields

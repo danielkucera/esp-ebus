@@ -101,6 +101,11 @@ class CommandManager {
   CommandChangedCallback command_changed_callback_ = nullptr;
   CommandChangedCallback command_removed_callback_ = nullptr;
 
+  // Set when a load consumed pre-split input (legacy read_cmd rows or the
+  // retired id/wid columns/keys); the boot/load path rewrites the file once
+  // so subsequent loads see only the split schema.
+  bool legacy_rewrite_pending_ = false;
+
   void deserializeCommands(FILE* file);
 };
 

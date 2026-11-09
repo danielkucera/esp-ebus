@@ -10,7 +10,7 @@ Read ebusd-configuration `.tsp` files for a device, parse registers/fields, grou
 
 - **No trailing underscores** in any emitted JSON field names
 - **Heap-free shape**: values must fit FixedString/StaticVector assumptions (ProfileFS<24> etc.). Avoid emitting runtime strings we don't need
-- **write id semantics**: commands that are writable must have `wid` per our decision (derive from tsp write semantics); NN is derived at runtime
+- **write id semantics**: commands that are writable must carry the write-side keys (`wpbsb`/`wdx`) per our decision (derive from tsp write semantics); NN is derived at runtime
 - **Deterministic**: sort keys, stable formatting to keep diffs readable
 - **Dev-only**: never linked into PlatformIO build, no runtime dependency in firmware
 
@@ -71,10 +71,10 @@ By default the CLI writes raw generated output to `tools/ebus-profile-gen/genera
 
 - `<tsp_stem>.profiles.json` — flat entries `{name, datatype, unit, divider, digits, min, max}` matching the `profiles/data_profiles.json` schema. These can be copied to `profiles/data_profiles_user.json` (the overlay) at compile time.
 - `<tsp_stem>.json` — command entries matching `config/simulation.json` schema:
-  `{key, name, zz, id, [nn], wid, interval, master, fields: [{name, profile, position, ha_profile, [bits]}]}`.
-  `wid` is omitted for read-only commands, `interval` defaults to 0 (passive only), `master` defaults to false, `ha_profile` is empty — fill these in by hand (exception: fields carrying a `bits` map get `ha_profile: "binary_sensor"` automatically — one HA binary_sensor per bit).
+  `{key, name, zz, pbsb, [dx], [nn], wpbsb, [wdx], interval, master, fields: [{name, profile, position, ha_profile, [bits]}]}`.
+  `wpbsb`/`wdx` are omitted for read-only commands, `interval` defaults to 0 (passive only), `master` defaults to false, `ha_profile` is empty — fill these in by hand (exception: fields carrying a `bits` map get `ha_profile: "binary_sensor"` automatically — one HA binary_sensor per bit).
   `bits` appears on byte-grouped bitfield fields (consecutive `BI0`–`BI7` children collapsed into one `UINT8` byte) as a map of sub-field name to bit index within that byte.
-  `zz` is the destination byte; `id` is the read id `PB SB Dx...` and `wid` the write id with the same layout, each 2-6 bytes. The `Dx...` tail is the resolved `@base`/`@inherit` D bytes plus the model's own `@ext` bytes (no default `0x0d` is invented); read NN is derived as `len(id)-2` unless an explicit `nn` override is given (the runtime write NN also counts the appended value bytes). Write-only commands have an empty `id` (`""`) and carry the addressing in `wid` alone.
+  `zz` is the destination byte; the read id splits into `pbsb` (`PB SB`, always present, `""` for write-only) and `dx` (the `Dx...` tail, 0–4 bytes), the write id into `wpbsb`/`wdx` with the same layout (concatenated ids are 2–6 bytes). The tail is the resolved `@base`/`@inherit` D bytes plus the model's own `@ext` bytes (no default `0x0d` is invented); read NN is derived as `len(dx)` (= `len(id)-2`) unless an explicit `nn` override is given (the runtime write NN also counts the appended value bytes). Write-only commands carry an empty `pbsb` (`""`) and the addressing in `wpbsb`/`wdx` alone.
   `key` is prefixed (default: derived from tsp filename, e.g. `08.ehp.tsp` → `ehp_8d`).
   Use `--key-prefix` to override the default prefix.
 

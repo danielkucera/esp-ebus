@@ -166,17 +166,26 @@ class Command {
   size_t writeLogMessage(char* buf, size_t len) const;
 
   static Command fromJson(ebus::detail::JsonReader& reader);
-  // legacy: rows carry read_cmd/write_cmd wire hex instead of zz/id/wid.
+  // legacy: rows carry read_cmd/write_cmd wire hex instead of zz/pbsb/dx.
   // has_nn: compact rows include the optional nn column (see saveCommands;
   // sniffed from the header row by the loaders).
+  // split: rows carry the split pbsb/dx/wpbsb/wdx columns; without it compact
+  // rows use the pre-split id/wid columns (read path for one-shot migration).
   static Command fromTabular(ebus::detail::JsonReader& reader, bool legacy,
-                             bool has_nn = true);
+                             bool has_nn = true, bool split = false);
 
-  static std::string_view evaluate(ebus::detail::JsonReader& reader);
+  // Validates a full command object. The strict form (default) rejects the
+  // retired id/wid keys; the loader passes allow_legacy so stored files in
+  // the pre-split schema still parse, reporting used_legacy when any legacy
+  // key was consumed so the caller can rewrite the file once.
+  static std::string_view evaluate(ebus::detail::JsonReader& reader,
+                                   bool allow_legacy = false,
+                                   bool* used_legacy = nullptr);
 
  private:
-  // Parsers shared by fromJson/fromTabular. Compact id/wid carry 2..6
-  // bytes (PB SB DD...); legacy read_cmd/write_cmd carry the full wire
+  // Parsers shared by fromJson/fromTabular. The split pbsb/dx and
+  // wpbsb/wdx halves concatenate to the same 2..6 byte id/wid layout
+  // (PB SB DD...); legacy read_cmd/write_cmd carry the full wire
   // hex (ZZ PB SB NN D...): read keeps NN only when it differs from
   // len(id)-2 (explicit override); write discards its NN byte - the
   // value length is unknowable at parse time, so buildWriteCmd always

@@ -885,6 +885,19 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
     pending_max[i] = std::numeric_limits<float>::quiet_NaN();
   }
 
+  // Split address halves are buffered: JSON field order is not guaranteed,
+  // so pbsb and dx (and the write-side pair) concatenate after the loop.
+  uint8_t pbsb_buf[2] = {};
+  size_t pbsb_len = 0;
+  uint8_t dx_buf[4] = {};
+  size_t dx_len = 0;
+  uint8_t wpbsb_buf[2] = {};
+  size_t wpbsb_len = 0;
+  uint8_t wdx_buf[4] = {};
+  size_t wdx_len = 0;
+  bool have_split_id = false;
+  bool have_split_wid = false;
+
   reader.forEachField([&](std::string_view key, ebus::detail::JsonReader& r) {
     auto token = r.next();
     if (key == "key")
@@ -916,6 +929,18 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
       uint8_t hex_buf[8];
       size_t hex_len = ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf));
       command.setWidBytes(ebus::ByteView(hex_buf, hex_len));
+    } else if (key == "pbsb") {
+      pbsb_len = ebus::toBytes(r.value(), pbsb_buf, sizeof(pbsb_buf));
+      have_split_id = true;
+    } else if (key == "dx") {
+      dx_len = ebus::toBytes(r.value(), dx_buf, sizeof(dx_buf));
+      have_split_id = true;
+    } else if (key == "wpbsb") {
+      wpbsb_len = ebus::toBytes(r.value(), wpbsb_buf, sizeof(wpbsb_buf));
+      have_split_wid = true;
+    } else if (key == "wdx") {
+      wdx_len = ebus::toBytes(r.value(), wdx_buf, sizeof(wdx_buf));
+      have_split_wid = true;
     } else if (key == "nn") {
       uint8_t hex_buf[8];
       if (ebus::toBytes(r.value(), hex_buf, sizeof(hex_buf)) == 1) {
@@ -980,6 +1005,19 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
     }
   }
 
+  if (have_split_id) {
+    uint8_t id_bytes[6] = {};
+    std::memcpy(id_bytes, pbsb_buf, pbsb_len);
+    std::memcpy(id_bytes + pbsb_len, dx_buf, dx_len);
+    command.setIdBytes(ebus::ByteView(id_bytes, pbsb_len + dx_len));
+  }
+  if (have_split_wid) {
+    uint8_t wid_bytes[6] = {};
+    std::memcpy(wid_bytes, wpbsb_buf, wpbsb_len);
+    std::memcpy(wid_bytes + wpbsb_len, wdx_buf, wdx_len);
+    command.setWidBytes(ebus::ByteView(wid_bytes, wpbsb_len + wdx_len));
+  }
+
   command.session_id_ = 0;
   command.poll_id_ = 0;
   command.last_ = 0;
@@ -988,13 +1026,15 @@ Command Command::fromJson(ebus::detail::JsonReader& reader) {
 }
 
 Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
-                             bool has_nn) {
+                             bool has_nn, bool split) {
   Command command;
   if (reader.next() != ebus::detail::JsonReader::Token::array_start)
     return command;
 
   // Column layout mirrors the saveCommands header: legacy rows carry the
-  // wire hex (read_cmd/write_cmd), compact rows carry zz/id/[nn]/wid.
+  // wire hex (read_cmd/write_cmd), compact rows carry zz/id/[nn]/wid, split
+  // rows carry zz/pbsb/dx/[nn]/wpbsb/wdx. The split halves are buffered and
+  // concatenated after the loop (column order is header-defined).
   enum Col {
     kKey,
     kName,
@@ -1004,6 +1044,10 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
     kId,
     kNn,
     kWid,
+    kPbsb,
+    kDx,
+    kWpbsb,
+    kWdx,
     kInterval,
     kMaster,
     kFields
@@ -1014,12 +1058,34 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
       kKey, kName, kZz, kId, kNn, kWid, kInterval, kMaster, kFields};
   static constexpr Col compact_cols[] = {kKey, kName,     kZz,     kId,
                                          kWid, kInterval, kMaster, kFields};
-  const Col* cols =
-      legacy ? legacy_cols : (has_nn ? compact_cols_nn : compact_cols);
+  static constexpr Col split_cols_nn[] = {kKey,      kName,   kZz,    kPbsb,
+                                          kDx,       kNn,     kWpbsb, kWdx,
+                                          kInterval, kMaster, kFields};
+  static constexpr Col split_cols[] = {
+      kKey, kName, kZz, kPbsb, kDx, kWpbsb, kWdx, kInterval, kMaster, kFields};
+  const Col* cols = legacy
+                        ? legacy_cols
+                        : (split ? (has_nn ? split_cols_nn : split_cols)
+                                 : (has_nn ? compact_cols_nn : compact_cols));
   const size_t col_count =
-      legacy ? (sizeof(legacy_cols) / sizeof(legacy_cols[0]))
-             : (has_nn ? sizeof(compact_cols_nn) / sizeof(compact_cols_nn[0])
-                       : sizeof(compact_cols) / sizeof(compact_cols[0]));
+      legacy
+          ? (sizeof(legacy_cols) / sizeof(legacy_cols[0]))
+          : (split ? (has_nn ? sizeof(split_cols_nn) / sizeof(split_cols_nn[0])
+                             : sizeof(split_cols) / sizeof(split_cols[0]))
+                   : (has_nn
+                          ? sizeof(compact_cols_nn) / sizeof(compact_cols_nn[0])
+                          : sizeof(compact_cols) / sizeof(compact_cols[0])));
+
+  uint8_t pbsb_buf[2] = {};
+  size_t pbsb_len = 0;
+  uint8_t dx_buf[4] = {};
+  size_t dx_len = 0;
+  uint8_t wpbsb_buf[2] = {};
+  size_t wpbsb_len = 0;
+  uint8_t wdx_buf[4] = {};
+  size_t wdx_len = 0;
+  bool have_split_id = false;
+  bool have_split_wid = false;
 
   int index = 0;
   while (true) {
@@ -1081,6 +1147,26 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
         size_t hex_len =
             ebus::toBytes(reader.value(), hex_buf, sizeof(hex_buf));
         command.setWidBytes(ebus::ByteView(hex_buf, hex_len));
+        break;
+      }
+      case kPbsb: {
+        pbsb_len = ebus::toBytes(reader.value(), pbsb_buf, sizeof(pbsb_buf));
+        have_split_id = true;
+        break;
+      }
+      case kDx: {
+        dx_len = ebus::toBytes(reader.value(), dx_buf, sizeof(dx_buf));
+        have_split_id = true;
+        break;
+      }
+      case kWpbsb: {
+        wpbsb_len = ebus::toBytes(reader.value(), wpbsb_buf, sizeof(wpbsb_buf));
+        have_split_wid = true;
+        break;
+      }
+      case kWdx: {
+        wdx_len = ebus::toBytes(reader.value(), wdx_buf, sizeof(wdx_buf));
+        have_split_wid = true;
         break;
       }
       case kInterval:
@@ -1196,6 +1282,19 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
     index++;
   }
 
+  if (have_split_id) {
+    uint8_t id_bytes[6] = {};
+    std::memcpy(id_bytes, pbsb_buf, pbsb_len);
+    std::memcpy(id_bytes + pbsb_len, dx_buf, dx_len);
+    command.setIdBytes(ebus::ByteView(id_bytes, pbsb_len + dx_len));
+  }
+  if (have_split_wid) {
+    uint8_t wid_bytes[6] = {};
+    std::memcpy(wid_bytes, wpbsb_buf, wpbsb_len);
+    std::memcpy(wid_bytes + wpbsb_len, wdx_buf, wdx_len);
+    command.setWidBytes(ebus::ByteView(wid_bytes, wpbsb_len + wdx_len));
+  }
+
   command.session_id_ = 0;
   command.poll_id_ = 0;
   command.last_ = 0;
@@ -1206,7 +1305,8 @@ Command Command::fromTabular(ebus::detail::JsonReader& reader, bool legacy,
 // Static buffer for error messages - avoids heap allocation
 static char command_eval_error_buf[512] = {};
 
-std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
+std::string_view Command::evaluate(ebus::detail::JsonReader& reader,
+                                   bool allow_legacy, bool* used_legacy) {
   if (reader.next() != ebus::detail::JsonReader::Token::object_start) {
     snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
              "Record root is not a JSON object");
@@ -1216,6 +1316,8 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
   struct {
     bool key = false, name = false, read = false, zz = false, id = false,
          wid = false, fields = false;
+    bool pbsb_seen = false, pbsb_has_bytes = false, dx_has_bytes = false;
+    bool wpbsb_seen = false, wpbsb_has_bytes = false, wdx_has_bytes = false;
   } met;
 
   const char* error = nullptr;
@@ -1237,37 +1339,59 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
         error = command_eval_error_buf;
       }
     } else if (key == "read_cmd" || key == "write_cmd" || key == "zz" ||
-               key == "id" || key == "wid" || key == "nn") {
-      if (key == "read_cmd" || key == "id") met.read = true;
+               key == "pbsb" || key == "dx" || key == "wpbsb" || key == "wdx" ||
+               key == "nn") {
+      if (key == "read_cmd" || key == "pbsb") met.read = true;
       if (key == "zz") met.zz = true;
-      if (key == "id") met.id = true;
-      if (key == "wid") met.wid = true;
+      if (key == "pbsb" || key == "dx") met.id = true;
+      if (key == "wpbsb" || key == "wdx") met.wid = true;
+      if ((key == "read_cmd" || key == "write_cmd") && used_legacy)
+        *used_legacy = true;
       if (token == ebus::detail::JsonReader::Token::string) {
         std::string_view hex = r.value();
-        // Character counts: zz/nn = 1 byte; id/wid = 2..6 bytes;
-        // read_cmd/write_cmd = 4..8 wire bytes (ZZ PB SB NN + <=4 D);
-        // write-side fields may be empty (not writable) and id may be
-        // empty (write-only command).
+        // Character counts: zz/nn = 1 byte; pbsb/wpbsb = 2 bytes (or
+        // empty); dx/wdx = 0..4 bytes; read_cmd/write_cmd = 4..8 wire
+        // bytes (ZZ PB SB NN + <=4 D). The split halves may be empty
+        // (write-only pbsb, read-side dx tail, read-only write side).
         size_t min_chars = 0, max_chars = 0;
+        bool allow_empty = false;
         if (key == "zz" || key == "nn") {
           min_chars = max_chars = 2;
-        } else if (key == "id" || key == "wid") {
+        } else if (key == "pbsb" || key == "wpbsb") {
           min_chars = 4;
-          max_chars = 12;
+          max_chars = 4;
+          allow_empty = true;
+        } else if (key == "dx" || key == "wdx") {
+          min_chars = 0;
+          max_chars = 8;
+          allow_empty = true;
+        } else if (key == "write_cmd") {
+          min_chars = 8;
+          max_chars = 16;
+          allow_empty = true;
         } else {
           min_chars = 8;
           max_chars = 16;
         }
-        if (hex.empty() &&
-            (key == "write_cmd" || key == "wid" || key == "id")) {
-          // Optional side left empty: read-only (wid) or write-only (id).
-        } else if (hex.length() < min_chars || hex.length() > max_chars ||
-                   hex.length() % 2 != 0) {
+        if (key == "pbsb") {
+          met.pbsb_seen = true;
+          met.pbsb_has_bytes = !hex.empty();
+        } else if (key == "dx") {
+          met.dx_has_bytes = !hex.empty();
+        } else if (key == "wpbsb") {
+          met.wpbsb_seen = true;
+          met.wpbsb_has_bytes = !hex.empty();
+        } else if (key == "wdx") {
+          met.wdx_has_bytes = !hex.empty();
+        }
+        bool empty_ok = hex.empty() && allow_empty;
+        if (!empty_ok && (hex.length() < min_chars ||
+                          hex.length() > max_chars || hex.length() % 2 != 0)) {
           snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
                    "Invalid hex string length: %.*s",
                    static_cast<int>(key.length()), key.data());
           error = command_eval_error_buf;
-        } else if (std::any_of(hex.begin(), hex.end(), [](char c) {
+        } else if (!empty_ok && std::any_of(hex.begin(), hex.end(), [](char c) {
                      return !isxdigit((unsigned char)c);
                    })) {
           snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
@@ -1280,6 +1404,48 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
                  "Invalid type for field: %.*s", static_cast<int>(key.length()),
                  key.data());
         error = command_eval_error_buf;
+      }
+    } else if (key == "id" || key == "wid") {
+      // Retired compact keys. The strict form rejects them; only the
+      // persistence loader opts in (allow_legacy) to migrate stored files.
+      if (!allow_legacy) {
+        snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
+                 "Unsupported key '%.*s': use pbsb/dx (read side) and "
+                 "wpbsb/wdx (write side)",
+                 static_cast<int>(key.length()), key.data());
+        error = command_eval_error_buf;
+      } else {
+        if (key == "read_cmd" || key == "id") met.read = true;
+        if (key == "id") met.id = true;
+        if (key == "wid") met.wid = true;
+        if (used_legacy) *used_legacy = true;
+        if (token == ebus::detail::JsonReader::Token::string) {
+          std::string_view hex = r.value();
+          // Retired keys: id/wid = 2..6 bytes (or empty, one side absent).
+          size_t min_chars = 4, max_chars = 12;
+          bool empty_ok = hex.empty();
+          if (!empty_ok &&
+              (hex.length() < min_chars || hex.length() > max_chars ||
+               hex.length() % 2 != 0)) {
+            snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
+                     "Invalid hex string length: %.*s",
+                     static_cast<int>(key.length()), key.data());
+            error = command_eval_error_buf;
+          } else if (!empty_ok &&
+                     std::any_of(hex.begin(), hex.end(), [](char c) {
+                       return !isxdigit((unsigned char)c);
+                     })) {
+            snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
+                     "Invalid hex character in: %.*s",
+                     static_cast<int>(key.length()), key.data());
+            error = command_eval_error_buf;
+          }
+        } else {
+          snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
+                   "Invalid type for field: %.*s",
+                   static_cast<int>(key.length()), key.data());
+          error = command_eval_error_buf;
+        }
       }
     } else if (key == "write_type") {
       if (token != ebus::detail::JsonReader::Token::string ||
@@ -1409,6 +1575,13 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
     return true;
   });
 
+  if (!error) {
+    if (met.dx_has_bytes && (!met.pbsb_seen || !met.pbsb_has_bytes)) {
+      error = "dx requires a non-empty pbsb";
+    } else if (met.wdx_has_bytes && (!met.wpbsb_seen || !met.wpbsb_has_bytes)) {
+      error = "wdx requires a non-empty wpbsb";
+    }
+  }
   if (error) return error;
   if (!met.key) {
     snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
@@ -1422,7 +1595,7 @@ std::string_view Command::evaluate(ebus::detail::JsonReader& reader) {
   }
   if (!met.read) {
     snprintf(command_eval_error_buf, sizeof(command_eval_error_buf),
-             "Missing required field: id or read_cmd");
+             "Missing required field: pbsb or read_cmd");
     return command_eval_error_buf;
   }
   if ((met.id || met.wid) && !met.zz) {

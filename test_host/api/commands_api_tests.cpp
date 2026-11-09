@@ -114,6 +114,61 @@ TEST_CASE("CommandsApi evaluates valid commands and rejects invalid ones",
   command_manager.wipeCommands();
 }
 
+TEST_CASE("CommandsApi rejects retired id/wid keys and columns",
+          "[commands_api]") {
+  command_manager.wipeCommands();
+  MqttHA mqtt_ha;
+  CommandsApi api(command_manager, mqtt_ha);
+
+  // Object form: retired read id key is rejected on evaluate and insert.
+  httpd_req_t obj_req{};
+  obj_req.body =
+      R"({"commands":[{"key":"api01","name":"Old","zz":"fe","id":"0700",)"
+      R"("interval":0,"master":true,"fields":[{"name":"value",)"
+      R"("profile":"uint8","position":1,"ha_profile":""}]}]})";
+  obj_req.content_len = static_cast<int>(obj_req.body.size());
+  REQUIRE(CommandsApi::handleCommandsEvaluate(&obj_req) == ESP_OK);
+  REQUIRE(obj_req.status == "400 Bad Request");
+  REQUIRE(obj_req.final_body.find("Unsupported key") != std::string::npos);
+
+  httpd_req_t obj_insert{};
+  obj_insert.body = obj_req.body;
+  obj_insert.content_len = obj_req.content_len;
+  REQUIRE(CommandsApi::handleCommandsInsert(&obj_insert) == ESP_OK);
+  REQUIRE(obj_insert.status == "400 Bad Request");
+  REQUIRE(command_manager.getCommandCount() == 0);
+
+  // Tabular form: retired id header column is rejected the same way.
+  httpd_req_t tab_req{};
+  tab_req.body =
+      R"({"commands":[["key","name","zz","id","wid","interval","master",)"
+      R"("fields"],["api01","Old","fe","0700","",0,true,)"
+      R"([{"name":"value","profile":"uint8","position":1,"ha_profile":""}]]]})";
+  tab_req.content_len = static_cast<int>(tab_req.body.size());
+  REQUIRE(CommandsApi::handleCommandsEvaluate(&tab_req) == ESP_OK);
+  REQUIRE(tab_req.status == "400 Bad Request");
+  REQUIRE(tab_req.final_body.find("Unsupported column") != std::string::npos);
+
+  // Split tabular schema evaluates and inserts cleanly.
+  httpd_req_t split_req{};
+  split_req.body =
+      R"({"commands":[["key","name","zz","pbsb","dx","wpbsb","wdx",)"
+      R"("interval","master","fields"],)"
+      R"(["api01","Split","fe","0700","","","",0,true,)"
+      R"([{"name":"value","profile":"uint8","position":1,"ha_profile":""}]]]})";
+  split_req.content_len = static_cast<int>(split_req.body.size());
+  REQUIRE(CommandsApi::handleCommandsEvaluate(&split_req) == ESP_OK);
+  REQUIRE(split_req.status == "200 OK");
+
+  httpd_req_t split_insert{};
+  split_insert.body = split_req.body;
+  split_insert.content_len = split_req.content_len;
+  REQUIRE(CommandsApi::handleCommandsInsert(&split_insert) == ESP_OK);
+  REQUIRE(split_insert.status == "200 OK");
+  REQUIRE(command_manager.findCommand("api01") != nullptr);
+  command_manager.wipeCommands();
+}
+
 TEST_CASE("CommandsApi removes selected commands", "[commands_api]") {
   command_manager.wipeCommands();
   MqttHA mqtt_ha;

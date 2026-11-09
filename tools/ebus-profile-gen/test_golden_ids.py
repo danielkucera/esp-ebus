@@ -59,26 +59,38 @@ def expect(
     id_hex: Optional[str],
     wid_hex: Optional[str] = None,
 ) -> None:
-    """Assert id/wid for a command (wid_hex=None asserts read-only)."""
+    """Assert read/write addressing for a command against ground truth.
+
+    Entries carry the split schema (pbsb/dx, wpbsb/wdx); assertions still
+    speak in concatenated id/wid hex so the archived-CSV constants stay
+    byte-identical to the pre-split golden file.
+    """
     global _checks
     _checks += 1
     entries = by_name.get(name)
+
+    def _read_id(e: Dict[str, Any]) -> str:
+        return (e.get("pbsb") or "") + (e.get("dx") or "")
+
+    def _write_id(e: Dict[str, Any]) -> str:
+        return (e.get("wpbsb") or "") + (e.get("wdx") or "")
+
     try:
         assert entries, (
             f"{name}: command missing (present: {sorted(by_name)})"
         )
         if wid_hex is None:
             assert all(
-                e.get("id") == id_hex and not e.get("wid") for e in entries
+                _read_id(e) == id_hex and not _write_id(e) for e in entries
             ), f"{name}: expected id={id_hex!r} read-only, got " + str(
-                [(e.get("id"), e.get("wid")) for e in entries]
+                [(_read_id(e), _write_id(e)) for e in entries]
             )
         else:
             assert all(
-                e.get("id") == id_hex and e.get("wid") == wid_hex
+                _read_id(e) == id_hex and _write_id(e) == wid_hex
                 for e in entries
             ), f"{name}: expected id={id_hex!r} wid={wid_hex!r}, got " + str(
-                [(e.get("id"), e.get("wid")) for e in entries]
+                [(_read_id(e), _write_id(e)) for e in entries]
             )
     except AssertionError as exc:
         _failures.append(str(exc))
@@ -92,7 +104,7 @@ def expect_absent(
     try:
         assert not by_name.get(name), (
             f"{name}: expected absent{(' (' + why + ')') if why else ''}, "
-            f"got {[(e.get('id'), e.get('wid')) for e in by_name[name]]}"
+            f"got {[(e.get('pbsb'), e.get('dx')) for e in by_name[name]]}"
         )
     except AssertionError as exc:
         _failures.append(str(exc))
