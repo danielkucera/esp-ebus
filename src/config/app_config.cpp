@@ -91,7 +91,8 @@ bool AppConfig::isKnownFlatKey(std::string_view key) {
          key == "systemResponse" || key == "scanOnStartup" ||
          key == "mqttEnabled" || key == "mqttServer" || key == "mqttUser" ||
          key == "mqttPass" || key == "rootTopic" || key == "mqttPayload" ||
-         key == "haEnabled" || key == "thingName" || key == "httpHeaders";
+         key == "mqttFrames" || key == "haEnabled" ||
+         key == "thingName" || key == "httpHeaders";
 }
 
 bool AppConfig::mergeFlatJson(
@@ -170,6 +171,8 @@ bool AppConfig::mergeFlatJson(
         mqtt.root_topic.assign(value);
       } else if (key == "mqttPayload") {
         mqtt.payload_mode = parseMqttPayloadMode(value);
+      } else if (key == "mqttFrames") {
+        mqtt.frames_enabled = parseFlatBool(value);
       } else if (key == "haEnabled") {
         mqtt_ha.enabled = parseFlatBool(value);
       } else if (key == "thingName") {
@@ -245,6 +248,8 @@ void AppConfig::collectDrift(const AppConfig& live, const AppConfig& requested,
     keys.emplace_back("rootTopic");
   if (live.mqtt.payload_mode != requested.mqtt.payload_mode)
     keys.emplace_back("mqttPayload");
+  if (live.mqtt.frames_enabled != requested.mqtt.frames_enabled)
+    keys.emplace_back("mqttFrames");
   if (live.mqtt_ha.enabled != requested.mqtt_ha.enabled)
     keys.emplace_back("haEnabled");
   if (driftStr(live.mqtt_ha.thing_name, requested.mqtt_ha.thing_name))

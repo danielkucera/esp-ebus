@@ -73,6 +73,7 @@ TEST_CASE("AppConfig mergeFlatJson applies NVS-keyed string values",
   REQUIRE(cfg.bus.window_us == 4350);
   REQUIRE(cfg.sntp.enabled == true);
   REQUIRE(cfg.mqtt.enabled == true);
+  REQUIRE(cfg.mqtt.frames_enabled == false);
   REQUIRE(cfg.bus.scan_on_startup == true);
   // Untouched keys keep their values
   REQUIRE(std::string(cfg.bus.address.c_str()) == "ff");
@@ -144,4 +145,17 @@ TEST_CASE("AppConfig mqttPayload selects the MQTT payload mode",
   REQUIRE(cfg.mergeFlatJson(R"({"mqttPayload":"bogus"})") == true);
   REQUIRE(cfg.mqtt.payload_mode == MqttPayloadMode::json_multivalue);
   REQUIRE(AppConfig::isKnownFlatKey("mqttPayload") == true);
+}
+
+TEST_CASE("AppConfig configures received frame publication",
+          "[app_config]") {
+  AppConfig cfg;
+  cfg.reset();
+  REQUIRE(cfg.mqtt.frames_enabled == false);
+
+  REQUIRE(cfg.mergeFlatJson(R"({"mqttFrames":"true"})") == true);
+  REQUIRE(cfg.mqtt.frames_enabled == true);
+  REQUIRE(cfg.mergeFlatJson(R"({"mqttFrames":"false"})") == true);
+  REQUIRE(cfg.mqtt.frames_enabled == false);
+  REQUIRE(AppConfig::isKnownFlatKey("mqttFrames") == true);
 }

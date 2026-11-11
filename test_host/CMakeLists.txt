@@ -150,6 +150,7 @@ target_link_libraries(api_tests PRIVATE
 )
 
 add_executable(app_tests
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/bus_segment_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/app/command_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/app/command_manager_tests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/app/cron_tests.cpp

@@ -370,6 +370,7 @@ void ConfigManager::fetchConfig(const ebus::JsonChunkVisitor& visitor) {
       field("systemResponse", defaults.bus.system_response);
       field("scanOnStartup", defaults.bus.scan_on_startup);
       field("mqttEnabled", defaults.mqtt.enabled);
+      field("mqttFrames", defaults.mqtt.frames_enabled);
       field("mqttServer", defaults.mqtt.server.c_str());
       field("mqttUser", defaults.mqtt.user.c_str());
       field("rootTopic", defaults.mqtt.root_topic.c_str());

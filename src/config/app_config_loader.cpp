@@ -86,6 +86,8 @@ bool AppConfigLoader::load(AppConfig& config) {
                               config_manager_.readString("rootTopic"));
   config.mqtt.payload_mode =
       parseMqttPayloadMode(config_manager_.readString("mqttPayload"));
+  config.mqtt.frames_enabled =
+      config_manager_.readBool("mqttFrames");
 
   // MQTT HA
   config.mqtt_ha.enabled = config_manager_.readBool("haEnabled");
@@ -153,6 +155,8 @@ bool AppConfigLoader::save(const AppConfig& config) {
       config_manager_.writeString("rootTopic", config.mqtt.root_topic.c_str());
   ok &= config_manager_.writeString(
       "mqttPayload", mqttPayloadModeName(config.mqtt.payload_mode).data());
+  ok &= config_manager_.writeString(
+      "mqttFrames", config.mqtt.frames_enabled ? "true" : "false");
 
   // MQTT HA
   ok &= config_manager_.writeString("haEnabled",

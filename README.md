@@ -75,6 +75,12 @@ simulation. For command and HTTP API examples, see
 ## Smart Home Integration
 
 - Native **MQTT support**
+- Opt-in MQTT frame publication sends non-empty bus segments between `aa`
+  synchronization bytes to `<root>/frames` (default: `ebus/<id>/frames`) as
+  lowercase hex. Delimiters are omitted; other wire bytes, including CRCs,
+  ACKs, escapes, invalid traffic and retries, are retained. The first segment
+  after startup may be partial. Segments longer than 256 bytes are dropped;
+  queue pressure or trace-queue overflow can also lose data.
 - **Home Assistant autodiscovery**
 - Seamless integration into existing automation setups
 - Suitable for dashboards, logging, and energy optimization
