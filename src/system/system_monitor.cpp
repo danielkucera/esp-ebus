@@ -347,7 +347,7 @@ void SystemMonitor::processProtocolInfo() {
     }
 
     if (item.info.is_error) {
-      Mqtt::publishProtocolInfo(item.info);
+      Mqtt::publishError(item.info);
     } else {
       // Every correctly received message is queued for logging, whether
       // or not a configured command matches it (unmatched telegrams

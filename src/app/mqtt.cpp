@@ -89,7 +89,7 @@ void Mqtt::stopTask() {
     // Send a dummy action to unblock xQueueReceive if task is waiting
     // This is safer than vQueueDelete which can cause race conditions
     OutgoingAction dummy;
-    dummy.type = OutgoingActionType::protocol_info;
+    dummy.type = OutgoingActionType::error;
     if (outgoing_queue_ != nullptr) {
       xQueueSend(outgoing_queue_, &dummy, 0);
     }
@@ -234,14 +234,14 @@ void Mqtt::enqueueOutgoing(const OutgoingAction& action) {
       instance_->outgoing_queue_ == nullptr)
     return;
 
-  // HA-style silent skip: value and protocol paths are high-rate, so queuing
-  // them while disconnected only produces failed publishes (and evicts
-  // queued work). Lifecycle types (Discovery/Components/Ha*) still queue —
-  // HaConnected is enqueued from the CONNECTED handler itself.
+  // HA-style silent skip: value paths (Data/Update/Error) are high-rate and
+  // refresh cyclically, so queuing them while disconnected only produces
+  // failed publishes (and evicts queued work). Lifecycle types
+  // (Discovery/Components/Ha*) still queue — HaConnected is enqueued from
+  // the CONNECTED handler itself.
   if (!instance_->connected_ && (action.type == OutgoingActionType::data ||
                                  action.type == OutgoingActionType::update ||
-                                 action.type ==
-                                     OutgoingActionType::protocol_info))
+                                 action.type == OutgoingActionType::error))
     return;
 
   if (xQueueSend(instance_->outgoing_queue_, &action, 0) != pdPASS) {
@@ -291,7 +291,7 @@ void Mqtt::publishData(const std::string& id,
   enqueueOutgoing(OutgoingAction(id, master, slave));
 }
 
-void Mqtt::publishProtocolInfo(const ebus::ProtocolInfo& info) {
+void Mqtt::publishError(const ebus::ProtocolInfo& info) {
   if (!instance_ || !instance_->enabled_) return;
   enqueueOutgoing(OutgoingAction(info));
 }
@@ -477,8 +477,8 @@ void Mqtt::taskFunc(void* arg) {
               }
             }
             break;
-          case OutgoingActionType::protocol_info: {
-            // Restore copied byte views for error JSON serialization.
+          case OutgoingActionType::error: {
+            // Fix up transient pointers for JSON serialization
             action.protocol_info.master_view = action.master;
             action.protocol_info.slave_view = action.slave;
             self->publishStream("errors", 0, false,

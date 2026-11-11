@@ -27,7 +27,7 @@
 
 enum class OutgoingActionType : uint8_t {
   component,
-  protocol_info,
+  error,
   frame,
   data,
   update,
@@ -76,7 +76,7 @@ struct OutgoingAction {
   explicit OutgoingAction(const ebus::ProtocolInfo& info)
       : command(nullptr),
         field_idx(0),
-        type(OutgoingActionType::protocol_info),
+        type(OutgoingActionType::error),
         ha_remove(false),
         protocol_info(info) {
     master.assign(info.master_view.data(), info.master_view.size());
@@ -170,7 +170,7 @@ class Mqtt {
                           const std::vector<uint8_t>& master,
                           const std::vector<uint8_t>& slave);
 
-  static void publishProtocolInfo(const ebus::ProtocolInfo& info);
+  static void publishError(const ebus::ProtocolInfo& info);
 
   static void publishValue(std::string_view key);
 
