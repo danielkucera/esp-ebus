@@ -283,21 +283,19 @@ bool App::initServices() {
         monitor_.enqueueProtocolInfo(info);
       });
 
+  // The trace callback runs on the reactor task; keep it non-blocking.
+  if ((config_.mqtt.enabled && config_.mqtt.frames_enabled) || EBUS_BUS_TAP) {
+    getEbusController().setTraceCallback([this](const ebus::BusEventInfo& info) {
+      mqtt_.onBusByte(info.byte);
 #if EBUS_BUS_TAP
-  // Bus byte tap for captures: every bus event as POD into the monitor
-  // ring (SystemMonitor::tapBusByte), formatted on /api/v1/app/tap fetch.
-  // Never format, allocate or log in this callback — it runs on the
-  // reactor thread at bus rate (the toJson variant historically
-  // overflowed task stacks). Enable capture builds with -DEBUS_BUS_TAP=1
-  // (default off: ~250 lines/s would drown serial + the log ring).
-  getEbusController().setTraceCallback([this](const ebus::BusEventInfo& info) {
-    const uint64_t boot_us = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(
-            info.timestamp.time_since_epoch())
-            .count());
-    monitor_.tapBusByte(boot_us, info.byte);
-  });
+      const uint64_t boot_us = static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              info.timestamp.time_since_epoch())
+              .count());
+      monitor_.tapBusByte(boot_us, info.byte);
 #endif
+    });
+  }
 
   startEbus();  // This will start the ebus controller
 

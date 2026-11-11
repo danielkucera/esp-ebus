@@ -7,6 +7,7 @@
 #include <freertos/task.h>
 #include <mqtt_client.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -15,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "app/bus_segment.hpp"
 #include "app/command.hpp"
 #include "app/ebus_accessor.hpp"
 #include "app/mqtt_payload.hpp"
@@ -26,6 +28,7 @@
 enum class OutgoingActionType : uint8_t {
   component,
   protocol_info,
+  frame,
   data,
   update,
   discovery,
@@ -36,12 +39,18 @@ enum class OutgoingActionType : uint8_t {
 };
 
 struct OutgoingAction {
+  struct Frame {
+    uint8_t bytes[app::max_bus_segment_size];
+    size_t size;
+  };
+
   const Command* command;  // for Component
   size_t field_idx;        // for Component (per-field HA)
   OutgoingActionType type;
   bool ha_remove;  // for Component
   union {
     ebus::ProtocolInfo protocol_info;  // for Error
+    Frame frame;
     ebus::FixedString<32> id;          // for Data
     ebus::FixedString<64> key;         // for Update
   };
@@ -74,6 +83,16 @@ struct OutgoingAction {
     slave.assign(info.slave_view.data(), info.slave_view.size());
     protocol_info.master_view = master;
     protocol_info.slave_view = slave;
+  }
+
+  OutgoingAction(const uint8_t* bytes, size_t size)
+      : command(nullptr),
+        field_idx(0),
+        type(OutgoingActionType::frame),
+        ha_remove(false),
+        frame{} {
+    frame.size = size;
+    std::copy_n(bytes, size, frame.bytes);
   }
 
   // Constructor for OutgoingActionType::data
@@ -126,6 +145,7 @@ class Mqtt {
   void setRootTopic(const std::string& topic);
   void setPayloadMode(MqttPayloadMode mode);
   void setFramesEnabled(bool enabled);
+  void onBusByte(uint8_t byte);
 
   void setEnabled(const bool enable);
   bool isEnabled() const;
@@ -193,6 +213,7 @@ class Mqtt {
 
   MqttPayloadMode payload_mode_ = MqttPayloadMode::json_multivalue;
   bool frames_enabled_ = false;
+  app::BusSegmentAssembler<app::max_bus_segment_size> frame_assembler_;
   bool enabled_ = false;
   volatile bool task_should_run_ = false;
   volatile bool task_exited_ = false;

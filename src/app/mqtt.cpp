@@ -14,7 +14,6 @@
 #include "app/mqtt_ha.hpp"
 #include "ebus/detail/json_reader.hpp"
 #include "ebus/detail/json_writer.hpp"
-#include "ebus/detail/protocol_limits.hpp"
 #include "ebus/status.hpp"
 #include "main.hpp"
 #include "network/wifi_network_manager.hpp"
@@ -181,6 +180,24 @@ void Mqtt::setPayloadMode(MqttPayloadMode mode) {
 void Mqtt::setFramesEnabled(bool enabled) {
   std::lock_guard<std::recursive_mutex> lock(mqtt_mutex_);
   frames_enabled_ = enabled;
+}
+
+void Mqtt::onBusByte(uint8_t byte) {
+  if (!frames_enabled_) return;
+  const auto result = frame_assembler_.push(
+      byte, [this](const uint8_t* data, size_t size) {
+        if (!enabled_ || !connected_ || outgoing_queue_ == nullptr) return;
+        const OutgoingAction action(data, size);
+        if (xQueueSend(outgoing_queue_, &action, 0) != pdPASS) {
+          queue_dropped_.fetch_add(1, std::memory_order_relaxed);
+        } else {
+          size_t current = uxQueueMessagesWaiting(outgoing_queue_);
+          ebus::updateMaxAtomic(max_outgoing_, current);
+        }
+      });
+  if (result == decltype(frame_assembler_)::Result::overflow) {
+    queue_dropped_.fetch_add(1, std::memory_order_relaxed);
+  }
 }
 
 void Mqtt::setRootTopic(const std::string& topic) {
@@ -464,28 +481,18 @@ void Mqtt::taskFunc(void* arg) {
             // Restore copied byte views for error JSON serialization.
             action.protocol_info.master_view = action.master;
             action.protocol_info.slave_view = action.slave;
-            static constexpr char hex[] = "0123456789abcdef";
-            char frame[4 * ebus::detail::SequenceLimits::model_capacity + 1];
-            size_t frame_len = 0;
-            auto append_hex = [&](const auto& bytes) {
-              for (uint8_t byte : bytes) {
-                frame[frame_len++] = hex[byte >> 4];
-                frame[frame_len++] = hex[byte & 0x0f];
-              }
-            };
-            append_hex(action.master);
-            append_hex(action.slave);
-            frame[frame_len] = '\0';
-            if (self->frames_enabled_) {
-              self->publish("frames", 0, false, frame);
-            }
-            if (action.protocol_info.is_error) {
-              self->publishStream("errors", 0, false,
-                                  [&](const ebus::JsonChunkVisitor& v) {
-                                    ebus::detail::JsonWriter writer(v);
-                                    action.protocol_info.toJson(writer);
-                                  });
-            }
+            self->publishStream("errors", 0, false,
+                                [&](const ebus::JsonChunkVisitor& v) {
+                                  ebus::detail::JsonWriter writer(v);
+                                  action.protocol_info.toJson(writer);
+                                });
+            break;
+          }
+          case OutgoingActionType::frame: {
+            char payload[2 * app::max_bus_segment_size + 1];
+            app::writeBusSegmentHex(action.frame.bytes, action.frame.size,
+                                    payload);
+            self->publish("frames", 0, false, payload);
             break;
           }
           case OutgoingActionType::data: {
