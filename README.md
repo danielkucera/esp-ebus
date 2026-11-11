@@ -75,6 +75,9 @@ simulation. For command and HTTP API examples, see
 ## Smart Home Integration
 
 - Native **MQTT support**
+- Received protocol frames (valid and invalid) are published as concatenated,
+  lowercase hexadecimal master and slave bytes to `<root>/frames` (default:
+  `ebus/<id>/frames`). Frame publication is opt-in via the MQTT configuration.
 - **Home Assistant autodiscovery**
 - Seamless integration into existing automation setups
 - Suitable for dashboards, logging, and energy optimization

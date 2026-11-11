@@ -50,6 +50,7 @@ struct AppConfig {
     ebus::FixedString<32> pass;
     ebus::FixedString<32> root_topic;
     MqttPayloadMode payload_mode = MqttPayloadMode::json_multivalue;
+    bool frames_enabled = false;
   } mqtt;
 
   struct MqttHa {

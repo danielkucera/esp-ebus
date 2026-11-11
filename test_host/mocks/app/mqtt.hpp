@@ -7,6 +7,7 @@
 
 #include <freertos/FreeRTOS.h>
 
+#include <ebus/callbacks.hpp>
 #include <ebus/detail/json_writer.hpp>
 #include <string>
 #include <string_view>
@@ -23,7 +24,7 @@ class Mqtt {
   TaskHandle_t getTaskHandle() const { return nullptr; }
   static void publishComponentDiscovery() {}
   static void publishValue(std::string_view) {}
-  static void publishError(int) {}
+  static void publishProtocolInfo(const ebus::ProtocolInfo&) {}
 };
 
 void appendMqttStatus(ebus::detail::JsonWriter& writer,

@@ -346,9 +346,8 @@ void SystemMonitor::processProtocolInfo() {
       item.info.slave_view = ebus::ByteView(nullptr, 0);
     }
 
-    if (item.info.is_error) {
-      Mqtt::publishError(item.info);
-    } else {
+    Mqtt::publishProtocolInfo(item.info);
+    if (!item.info.is_error) {
       // Every correctly received message is queued for logging, whether
       // or not a configured command matches it (unmatched telegrams
       // previously vanished silently inside updateData). Formatting

@@ -130,6 +130,7 @@ bool App::initServices() {
     mqtt_.setRootTopic(std::string(mqtt_config.root_topic.c_str()));
   }
   mqtt_.setPayloadMode(mqtt_config.payload_mode);
+  mqtt_.setFramesEnabled(mqtt_config.frames_enabled);
   mqtt_.start();
 
   mqtt_ha_.setUniqueId(mqtt_.getUniqueId());

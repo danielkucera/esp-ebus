@@ -25,7 +25,7 @@
 
 enum class OutgoingActionType : uint8_t {
   component,
-  error,
+  protocol_info,
   data,
   update,
   discovery,
@@ -67,7 +67,7 @@ struct OutgoingAction {
   explicit OutgoingAction(const ebus::ProtocolInfo& info)
       : command(nullptr),
         field_idx(0),
-        type(OutgoingActionType::error),
+        type(OutgoingActionType::protocol_info),
         ha_remove(false),
         protocol_info(info) {
     master.assign(info.master_view.data(), info.master_view.size());
@@ -125,6 +125,7 @@ class Mqtt {
   void setCredentials(const char* username, const char* password = nullptr);
   void setRootTopic(const std::string& topic);
   void setPayloadMode(MqttPayloadMode mode);
+  void setFramesEnabled(bool enabled);
 
   void setEnabled(const bool enable);
   bool isEnabled() const;
@@ -149,7 +150,7 @@ class Mqtt {
                           const std::vector<uint8_t>& master,
                           const std::vector<uint8_t>& slave);
 
-  static void publishError(const ebus::ProtocolInfo& info);
+  static void publishProtocolInfo(const ebus::ProtocolInfo& info);
 
   static void publishValue(std::string_view key);
 
@@ -191,6 +192,7 @@ class Mqtt {
   std::string uri_;
 
   MqttPayloadMode payload_mode_ = MqttPayloadMode::json_multivalue;
+  bool frames_enabled_ = false;
   bool enabled_ = false;
   volatile bool task_should_run_ = false;
   volatile bool task_exited_ = false;

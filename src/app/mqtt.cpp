@@ -14,6 +14,7 @@
 #include "app/mqtt_ha.hpp"
 #include "ebus/detail/json_reader.hpp"
 #include "ebus/detail/json_writer.hpp"
+#include "ebus/detail/protocol_limits.hpp"
 #include "ebus/status.hpp"
 #include "main.hpp"
 #include "network/wifi_network_manager.hpp"
@@ -89,7 +90,7 @@ void Mqtt::stopTask() {
     // Send a dummy action to unblock xQueueReceive if task is waiting
     // This is safer than vQueueDelete which can cause race conditions
     OutgoingAction dummy;
-    dummy.type = OutgoingActionType::error;
+    dummy.type = OutgoingActionType::protocol_info;
     if (outgoing_queue_ != nullptr) {
       xQueueSend(outgoing_queue_, &dummy, 0);
     }
@@ -177,6 +178,11 @@ void Mqtt::setPayloadMode(MqttPayloadMode mode) {
   payload_mode_ = mode;
 }
 
+void Mqtt::setFramesEnabled(bool enabled) {
+  std::lock_guard<std::recursive_mutex> lock(mqtt_mutex_);
+  frames_enabled_ = enabled;
+}
+
 void Mqtt::setRootTopic(const std::string& topic) {
   std::lock_guard<std::recursive_mutex> lock(mqtt_mutex_);
   root_topic_ = topic;
@@ -211,14 +217,14 @@ void Mqtt::enqueueOutgoing(const OutgoingAction& action) {
       instance_->outgoing_queue_ == nullptr)
     return;
 
-  // HA-style silent skip: value paths (Data/Update/Error) are high-rate and
-  // refresh cyclically, so queuing them while disconnected only produces
-  // failed publishes (and evicts queued work). Lifecycle types
-  // (Discovery/Components/Ha*) still queue — HaConnected is enqueued from
-  // the CONNECTED handler itself.
+  // HA-style silent skip: value and protocol paths are high-rate, so queuing
+  // them while disconnected only produces failed publishes (and evicts
+  // queued work). Lifecycle types (Discovery/Components/Ha*) still queue —
+  // HaConnected is enqueued from the CONNECTED handler itself.
   if (!instance_->connected_ && (action.type == OutgoingActionType::data ||
                                  action.type == OutgoingActionType::update ||
-                                 action.type == OutgoingActionType::error))
+                                 action.type ==
+                                     OutgoingActionType::protocol_info))
     return;
 
   if (xQueueSend(instance_->outgoing_queue_, &action, 0) != pdPASS) {
@@ -268,7 +274,7 @@ void Mqtt::publishData(const std::string& id,
   enqueueOutgoing(OutgoingAction(id, master, slave));
 }
 
-void Mqtt::publishError(const ebus::ProtocolInfo& info) {
+void Mqtt::publishProtocolInfo(const ebus::ProtocolInfo& info) {
   if (!instance_ || !instance_->enabled_) return;
   enqueueOutgoing(OutgoingAction(info));
 }
@@ -454,15 +460,32 @@ void Mqtt::taskFunc(void* arg) {
               }
             }
             break;
-          case OutgoingActionType::error: {
-            // Fix up transient pointers for JSON serialization
+          case OutgoingActionType::protocol_info: {
+            // Restore copied byte views for error JSON serialization.
             action.protocol_info.master_view = action.master;
             action.protocol_info.slave_view = action.slave;
-            self->publishStream("errors", 0, false,
-                                [&](const ebus::JsonChunkVisitor& v) {
-                                  ebus::detail::JsonWriter writer(v);
-                                  action.protocol_info.toJson(writer);
-                                });
+            static constexpr char hex[] = "0123456789abcdef";
+            char frame[4 * ebus::detail::SequenceLimits::model_capacity + 1];
+            size_t frame_len = 0;
+            auto append_hex = [&](const auto& bytes) {
+              for (uint8_t byte : bytes) {
+                frame[frame_len++] = hex[byte >> 4];
+                frame[frame_len++] = hex[byte & 0x0f];
+              }
+            };
+            append_hex(action.master);
+            append_hex(action.slave);
+            frame[frame_len] = '\0';
+            if (self->frames_enabled_) {
+              self->publish("frames", 0, false, frame);
+            }
+            if (action.protocol_info.is_error) {
+              self->publishStream("errors", 0, false,
+                                  [&](const ebus::JsonChunkVisitor& v) {
+                                    ebus::detail::JsonWriter writer(v);
+                                    action.protocol_info.toJson(writer);
+                                  });
+            }
             break;
           }
           case OutgoingActionType::data: {
