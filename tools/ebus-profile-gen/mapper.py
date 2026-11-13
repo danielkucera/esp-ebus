@@ -162,7 +162,7 @@ DATATYPE_SIZE: Dict[str, int] = {
     "DATE_BCD4": 4, "DATE_BCD4Z": 4, "DATE_BIN4": 4, "DATETIME_MIN4": 4,
     # 5-8 bytes
     "CHAR5": 5, "HEX5": 5, "CHAR6": 6, "HEX6": 6, "CHAR7": 7, "HEX7": 7, "CHAR8": 8, "HEX8": 8,
-    # 9-16 bytes (ebusd defines these via @maxLength on STR/HEX). The
+    # 9-16 bytes (TypeSpec defines these via @maxLength on STR/HEX). The
     # protocol caps NN at 16 data bytes (spec 5.6, max_data_bytes), so
     # nothing wider than 16 can occur on the wire — no rows beyond this.
     "CHAR9": 9, "HEX9": 9, "CHAR10": 10, "HEX10": 10, "CHAR11": 11, "HEX11": 11,
@@ -410,7 +410,7 @@ def _map_type(ebus_type: str, max_length: Optional[int] = None) -> str:
 
 
 def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]] = None) -> str:
-    """Classify an ebusd TypeSpec type for the conversion log.
+    """Classify a TypeSpec type for the conversion log.
 
     Returns one of: native, profile, unsupported, defaulted.
 
@@ -665,7 +665,7 @@ def _format_command_name(model_name: str, namespace: str = "") -> str:
 
 
 def tsp_type_to_datatype(tsp_type: str) -> str:
-    """Map ebusd/tsp type to our datatype."""
+    """Map TypeSpec/tsp type to our datatype."""
     return _map_type(tsp_type)
 
 
@@ -1104,7 +1104,7 @@ def build_profiles_and_commands(
         if classification == "defaulted":
             log.warn(
                 "resolve",
-                "type has no ebusd→library mapping; using raw name",
+                "type has no TypeSpec→library mapping; using raw name",
                 action="defaulted",
                 input_type=t_orig,
                 resolved_type=t,

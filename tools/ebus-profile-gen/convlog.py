@@ -14,7 +14,7 @@ Stages:
     emit      - output file writing
 
 Classifications (for type resolution):
-    native      - ebusd type maps directly to an ebus-library DataType
+    native      - TypeSpec type maps directly to an ebus-library DataType
     profile     - supported type that needs unit/scaling metadata
     unsupported - no native DataType equivalent (needs explicit decoding)
     defaulted   - unknown type; mapped by guessing (a bug, surfaced loudly)

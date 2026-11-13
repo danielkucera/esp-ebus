@@ -68,7 +68,7 @@ class Command {
   uint8_t getKeyId() const;
   std::string_view getName() const;
 
-  // Compact telegram identity (ebusd model): zz + id (read) + wid (write).
+  // Compact telegram identity: zz + id (read) + wid (write).
   // Wire telegrams are built on demand; NN is derived from the id length
   // unless an explicit override (nn_ovr) was parsed.
   ebus::ByteView getZz() const;

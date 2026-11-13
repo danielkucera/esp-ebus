@@ -390,7 +390,7 @@ class TspParser:
                     if own_pb is not None:
                         meta["write_pb"] = own_pb
                     if passive:
-                        # @write @passive (ebusd *uw): same bytes are also
+                        # @write @passive (write twin *uw): same bytes are also
                         # readable, but only passively (lower priority).
                         meta["read_tail"] = list(base_tail)
                         meta["read_prio"] = 1

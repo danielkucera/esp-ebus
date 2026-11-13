@@ -203,8 +203,8 @@ void Logger::printTaskLoop() {
       // provably-bounded ranges only.
       char ts[26]{};
       if (item.wall_ms > 0) {
-        // ebusd-style wall timestamp (TZ from SNTP config): console lines
-        // diff directly against ebusd/ebusread logs.
+        // Wall timestamp (TZ from SNTP config): console lines
+        // diff directly against external tool logs.
         const time_t sec = static_cast<time_t>(item.wall_ms / 1000);
         struct tm tm;
         localtime_r(&sec, &tm);

@@ -304,7 +304,8 @@ void BusType::receive(uint8_t symbol, uint32_t start_bit_time) {
                       bus_state_.microsSinceLastSyn());
         }
       }
-      // send to everybody. ebusd needs the SYN to get in the right mood
+      // send to everybody. The enhanced client needs the SYN to get in
+      // the right mood
       push({false, received, symbol, -1, client_fd_});
       break;
     case Arbitration::arbitrating:

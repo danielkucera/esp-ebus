@@ -25,7 +25,7 @@ command_types::WriteType parseWriteType(std::string_view name) {
   return command_types::WriteType::invalid;
 }
 
-// Wire filler fields (ebusd `ign` / `ign_N`) are not client input:
+// Wire filler fields (`ign` / `ign_N`) are not client input:
 // multi-field writes auto-pad them with 0 so byte positions stay right.
 bool isIgnFieldName(std::string_view name) {
   return name == "ign" || name.rfind("ign_", 0) == 0;

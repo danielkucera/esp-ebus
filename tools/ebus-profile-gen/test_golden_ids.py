@@ -2,7 +2,7 @@
 """Golden id/wid/position assertions for the ebus-profile generator.
 
 Verifies resolved read/write addressing of representative commands against
-the archived ebusd CSV ground truth (concatenation model: template PBSB +
+the archived CSV ground truth (concatenation model: template PBSB +
 base D bytes + member ext), BI byte-grouping (consecutive BI0..BI7 runs
 collapse to one UINT8 field carrying a `bits` name->bit map), write-only
 commands with an empty id, 1-based byte positions of fields, and composite

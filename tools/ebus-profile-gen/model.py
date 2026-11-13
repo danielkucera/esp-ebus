@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any
 @dataclass
 class FieldIR:
     name: str
-    # hints from tsp/ebusd
+    # hints from tsp files
     ebus_type: str = ""
     unit: str = ""
     factor: str = ""  # keep as string to preserve exactness if needed

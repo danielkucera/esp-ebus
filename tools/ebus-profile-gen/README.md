@@ -192,7 +192,7 @@ defaulted:
 
 ```
 {"stage":"parse","severity":"warn","reason":"scalar redefined ...","scalar":"cntstarts","line":8,...}
-{"stage":"resolve","severity":"warn","reason":"type has no ebusd→library mapping ...","input_type":"phaseok","datatype":"phaseok",...}
+{"stage":"resolve","severity":"warn","reason":"type has no TypeSpec→library mapping ...","input_type":"phaseok","datatype":"phaseok",...}
 {"stage":"command","severity":"warn","reason":"zz+id collides ...","zz":"08","id":"b5090d0800","name":"source","duplicate":...}
 ```
 
