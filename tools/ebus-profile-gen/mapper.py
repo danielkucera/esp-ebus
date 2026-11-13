@@ -1100,7 +1100,7 @@ def build_profiles_and_commands(
             meta["values"] = enums[t].get("entries", [])
         
         datatype = _map_type(t)
-        classification = _classify_type(t_orig, datatype, enums)
+        classification = _classify_type(t, datatype, enums)
         if classification == "defaulted":
             log.warn(
                 "resolve",

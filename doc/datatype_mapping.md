@@ -125,6 +125,7 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | U3L / U3B / S3L / S3B | 24-bit integers without a null sentinel | No native "no replacement" DataType — mapped to raw HEX3 |
 | U1L / U2L / U4L / S1L / S2L / S4L | eBUS `REQ` numbers (ebusd: no replacement value — extreme value is a normal reading) | Mapped to the sentinel-bearing UINT8/16/32 and INT8/16/32: the extreme value (`0xFF`, `0xFFFF`, `0xFFFF'FFFF`, `0x80`, …) renders `null` instead of the raw number. Accepted edge case — no no-sentinel variants are planned |
 | HCL / VA | Not defined in vendored ebusd 26.1 (`datatype.cpp`) or any vendored TypeSpec | Stale entries — confirm origin before mapping |
+| CHAR17+ / HEX17+ (e.g. CHAR21, HEX18) | `@maxLength` >16 on STR/HEX — needs more than 16 data bytes; NN caps the payload at 16 (spec 5.6). Corpus never emits them | Kept skipped — impossible on the wire; mapper flags the width `unsupported`, no code |
 | BI0-BI7 / boolean | Bit extraction | BI runs collapse into one UINT8 field with a per-bit `bits` map; plain boolean/BOOL commands are gated — no `ebus::DataType` BOOL exists |
 
 ---
