@@ -272,6 +272,94 @@ TEST_CASE("Command getVectorFromString demands exact bytes", "[Command]") {
   REQUIRE(cmd.getVectorFromString("0xab", 0).empty());
 }
 
+TEST_CASE("Command getVectorFromString parses date/time/pin formats",
+          "[Command]") {
+  // DATE_BCD4: semantic text is 10 chars, the wire field 4 bytes — the
+  // CHAR exact-length gate must not apply.
+  std::string djson =
+      R"({"key":"t2","name":"DateWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"d","profile":"date_bcd4","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader dreader(djson);
+  Command dcmd = Command::fromJson(dreader);
+  REQUIRE(dcmd.getFieldCount() == 1);
+  REQUIRE(dcmd.getFieldDatatype(0) == ebus::DataType::date_bcd4);
+
+  // 17.03.2021 (Wed) -> wire DD MM WW YY.
+  ebus::Sequence ok = dcmd.getVectorFromString("17.03.2021", 0);
+  REQUIRE(ok.size() == 4);
+  REQUIRE(ok[0] == 0x17);
+  REQUIRE(ok[1] == 0x03);
+  REQUIRE(ok[2] == 0x03);
+  REQUIRE(ok[3] == 0x21);
+
+  // Malformed input rejects via encode(), never falls into the CHAR gate.
+  REQUIRE(dcmd.getVectorFromString("2021-03-17", 0).empty());
+  REQUIRE(dcmd.getVectorFromString("17.13.2021", 0).empty());
+  REQUIRE(dcmd.getVectorFromString("17.03.202", 0).empty());
+
+  // "null" token writes the wire replacement.
+  ebus::Sequence nul = dcmd.getVectorFromString("null", 0);
+  REQUIRE(nul.size() == 4);
+  REQUIRE(nul[0] == 0xff);
+
+  // DATETIME_MIN4: "dd.MM.yyyy HH:mm" (16 chars) -> LE u32 minutes since
+  // 01.01.2009; the DATE prefix match must cover DATETIME as well.
+  std::string xjson =
+      R"({"key":"t5","name":"DateTimeWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"x","profile":"datetime_min4","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader xreader(xjson);
+  Command xcmd = Command::fromJson(xreader);
+  REQUIRE(xcmd.getFieldCount() == 1);
+  REQUIRE(xcmd.getFieldDatatype(0) == ebus::DataType::datetime_min4);
+  ebus::Sequence xok = xcmd.getVectorFromString("15.06.2024 14:37", 0);
+  REQUIRE(xok.size() == 4);
+  REQUIRE(xok[0] == 0xed);
+  REQUIRE(xok[1] == 0x06);
+  REQUIRE(xok[2] == 0x7c);
+  REQUIRE(xok[3] == 0x00);
+  // Missing separator or trailing seconds never parse.
+  REQUIRE(xcmd.getVectorFromString("15.06.202414:37", 0).empty());
+  REQUIRE(xcmd.getVectorFromString("15.06.2024 14:37:00", 0).empty());
+
+  // TIME_BCD3R: "07:42:16" -> wire SS MM HH.
+  std::string tjson =
+      R"({"key":"t3","name":"TimeWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"t","profile":"time_bcd3r","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader treader(tjson);
+  Command tcmd = Command::fromJson(treader);
+  REQUIRE(tcmd.getFieldCount() == 1);
+  ebus::Sequence tok = tcmd.getVectorFromString("07:42:16", 0);
+  REQUIRE(tok.size() == 3);
+  REQUIRE(tok[0] == 0x16);
+  REQUIRE(tok[1] == 0x42);
+  REQUIRE(tok[2] == 0x07);
+  // Seconds are required for this type; trailing junk never parses.
+  REQUIRE(tcmd.getVectorFromString("07:42", 0).empty());
+  REQUIRE(tcmd.getVectorFromString("07:42:16x", 0).empty());
+
+  // PIN2: 4-digit text -> big-endian BCD digits.
+  std::string pjson =
+      R"({"key":"t4","name":"PinWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"code","profile":"pin2","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader preader(pjson);
+  Command pcmd = Command::fromJson(preader);
+  REQUIRE(pcmd.getFieldCount() == 1);
+  ebus::Sequence pok = pcmd.getVectorFromString("0077", 0);
+  REQUIRE(pok.size() == 2);
+  REQUIRE(pok[0] == 0x00);
+  REQUIRE(pok[1] == 0x77);
+  REQUIRE(pcmd.getVectorFromString("abcd", 0).empty());
+  REQUIRE(pcmd.getVectorFromString("10000", 0).empty());
+}
+
 TEST_CASE("Command getVectorFromJson rejects garbage numerics", "[Command]") {
   std::string json =
       R"({"key":"01","name":"Outside_Temperature","read_cmd":"fe070009",)"

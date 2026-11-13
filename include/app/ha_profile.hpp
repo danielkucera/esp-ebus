@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-inline constexpr size_t max_key_value_pairs = 5;
+inline constexpr size_t max_key_value_pairs = 8;
 
 struct HAProfile {
   const char* name;

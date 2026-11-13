@@ -786,6 +786,14 @@ ebus::Sequence Command::getVectorFromString(std::string_view value,
     size_t hex_len = ebus::toBytes(value, hex_buf, sizeof(hex_buf));
     if (hex_len != need) return {};
     dv = ebus::byteToChar(ebus::ByteView(hex_buf, hex_len));
+  } else if (dt_name.find("DATE") == 0 || dt_name.find("TIME_") == 0 ||
+             dt_name == "PIN2") {
+    // Semantic text ("17.03.2021", "14:37:09", "0077", and the combined
+    // "dd.MM.yyyy HH:mm" datetime): the length is the rendered format,
+    // not the wire size, so the CHAR exact-length gate must not apply.
+    // encode() parses the format and rejects malformed input with an
+    // empty sequence.
+    dv = std::string(value);
   } else {
     // Exact bytes demanded for CHAR as well: short strings cannot carry
     // explicit NUL padding through a text input, so anything short is a

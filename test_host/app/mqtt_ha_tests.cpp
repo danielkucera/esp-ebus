@@ -249,6 +249,17 @@ void registerBitsCommand() {
   command_manager.insertCommand(Command::fromJson(reader));
 }
 
+void registerWeekdayCommand() {
+  command_manager.wipeCommands();
+  std::string json =
+      R"({"key":"04","name":"Weekday","read_cmd":"b5090109",)"
+      R"("write_cmd":"","interval":0,"master":false,)"
+      R"("fields":[{"name":"day","profile":"uint8","position":1,)"
+      R"("ha_profile":"select_enum_weekday_mon0"}]})";
+  ebus::detail::JsonReader reader(json);
+  command_manager.insertCommand(Command::fromJson(reader));
+}
+
 }  // namespace
 
 TEST_CASE("MqttHA publishes one binary_sensor per bit", "[mqttha]") {
@@ -295,4 +306,24 @@ TEST_CASE("MqttHA remove clears every bit entity", "[mqttha]") {
   REQUIRE(recorder.messages[1].topic ==
           "homeassistant/binary_sensor/ebus820b80/03_hcmode_bi_1/config");
   REQUIRE(recorder.messages[1].payload.empty());
+}
+
+TEST_CASE("MqttHA weekday select publishes all seven BDY options", "[mqttha]") {
+  Recorder recorder;
+  registerWeekdayCommand();
+  MqttHA ha = makeHa(recorder);
+
+  const Command* cmd = command_manager.findCommand("04");
+  REQUIRE(cmd != nullptr);
+  ha.publishComponent(cmd, 0, false);
+
+  REQUIRE(recorder.messages.size() == 1);
+  const PublishedMessage& msg = recorder.messages[0];
+  REQUIRE(msg.topic == "homeassistant/select/ebus820b80/04_weekday_day/config");
+  // Seven Mon–Sun options: the 8-slot option buffers must not truncate.
+  REQUIRE(payloadContains(
+      msg, R"("options":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"])"));
+  REQUIRE(payloadContains(
+      msg, R"(0:'Mon',1:'Tue',2:'Wed',3:'Thu',4:'Fri',5:'Sat',6:'Sun')"));
+  REQUIRE(payloadContains(msg, R"('Mon':0,'Tue':1)"));
 }

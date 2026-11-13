@@ -18,7 +18,7 @@ inline constexpr size_t max_device_id_length = 32;   // e.g., "ebus8406ac"
 // Option/select mapping limits
 inline constexpr size_t max_option_value_map_length = 256; // Jinja2 template buffer size
 inline constexpr size_t max_option_string_length = 16;     // Individual option string length
-inline constexpr size_t max_options_count = 5;             // Maximum key-value pairs per profile
+inline constexpr size_t max_options_count = 8;             // Maximum key-value pairs per profile
 }  // namespace mqtt_ha_limits
 // clang-format on
 

@@ -20,7 +20,7 @@ TYPE_MAP: Dict[str, str] = {
     "SCH": "INT8",
     "D1B": "DATA1B",   # 1-byte signed fixed-point (ebus::DataType::data1b)
     "D1C": "DATA1C",   # 1-byte unsigned fixed-point /2 (ebus::DataType::data1c)
-    "BCD": "BCD",
+    "BCD": "BCD8",
     "HCD": "UINT8",    # 1-byte HCD: no native library type, treat as raw UINT8
     "BI0": "UINT8", "BI1": "UINT8", "BI2": "UINT8", "BI3": "UINT8",
     "BI4": "UINT8", "BI5": "UINT8", "BI6": "UINT8", "BI7": "UINT8",
@@ -30,7 +30,7 @@ TYPE_MAP: Dict[str, str] = {
     "INT8": "INT8",
     "UINT8": "UINT8",
     # 2 byte types
-    "PIN": "UINT16",   # 2-byte BCD reversed; no native PIN type, raw UINT16
+    "PIN": "PIN2",     # 2-byte BCD reversed, "0077" string output
     "UIN": "UINT16",
     "UIR": "UINT16R",
     "U2L": "UINT16",
@@ -39,7 +39,7 @@ TYPE_MAP: Dict[str, str] = {
     "SIR": "INT16R",
     "S2L": "INT16",
     "S2B": "INT16R",
-    "BCD2": "HEX2",    # 2-byte BCD digit bytes; no native decode → raw hex
+    "BCD2": "BCD16",   # 2-byte BCD digit pairs, little-endian pairs
     "HCD2": "HEX2",    # 2-byte HCD digit bytes (0x00-0x63 each) → raw hex
     "D2B": "DATA2B",   # 2-byte signed fixed-point /256 (ebus::DataType::data2b)
     "D2C": "DATA2C",   # 2-byte signed fixed-point /16 (ebus::DataType::data2c)
@@ -49,16 +49,16 @@ TYPE_MAP: Dict[str, str] = {
     "UINT16": "UINT16",
     # 3 byte types — U3N/S3N families have native 24-bit DataTypes;
     # the no-sentinel U3L/U3B/S3L/S3B variants do not
-    "BCD3": "CHAR3",   # 3-byte BCD (cntstarts, cnthours): shipped raw CHAR3
+    "BCD3": "BCD24",   # 3-byte BCD (cntstarts, cnthours): native 6-digit BCD
     "HCD3": "HEX3",    # 3-byte HCD digit bytes; no native decode → raw hex
     "U3N": "UINT24",
     "U3R": "UINT24R",
-    "U3L": "CHAR3",
-    "U3B": "CHAR3",
+    "U3L": "HEX3",
+    "U3B": "HEX3",
     "S3N": "INT24",
     "S3R": "INT24R",
-    "S3L": "CHAR3",
-    "S3B": "CHAR3",
+    "S3L": "HEX3",
+    "S3B": "HEX3",
     "INT32": "INT32",
     "UINT32": "UINT32",
     # 4 byte types
@@ -70,12 +70,12 @@ TYPE_MAP: Dict[str, str] = {
     "SLR": "INT32R",
     "S4L": "INT32",
     "S4B": "INT32R",
-    "BCD4": "HEX4",    # 4-byte BCD/HCD digit bytes; no native decode → raw hex
+    "BCD4": "BCD32",   # 4-byte BCD digit pairs; HCD4 stays raw hex
     "HCD4": "HEX4",
-    "EXP": "FLOAT4",
-    "EXR": "FLOAT4R",
-    "FLOAT4": "FLOAT4",
-    "FLOAT4R": "FLOAT4R",
+    "EXP": "FLOAT32",
+    "EXR": "FLOAT32R",
+    "FLOAT4": "FLOAT32",
+    "FLOAT4R": "FLOAT32R",
     # String types — @maxLength handled by _map_type(); fallback CHAR1/HEX1
     "STR": "CHAR1",
     "NTS": "CHAR1",
@@ -116,24 +116,25 @@ TYPE_MAP: Dict[str, str] = {
     # Boolean/bit — no native BOOL DataType; boolean → UINT8
     "boolean": "UINT8",
     "BOOL": "UINT8",
-    # Date/time types — no native semantic DataType; store as raw bytes
-    "BTI": "CHAR3",    # 3-byte BCD time (seconds-first, reversed)
-    "HTI": "CHAR3",    # 3-byte decimal time
-    "VTI": "CHAR3",    # 3-byte decimal time [Vaillant]
-    "BTM": "UINT16",   # 2-byte BCD time hh:mm
-    "HTM": "UINT16",   # 2-byte decimal time hh:mm
-    "VTM": "UINT16R",  # 2-byte decimal time hh:mm [Vaillant, reversed]
-    "MIN": "UINT16",   # 2-byte minutes since midnight
-    "TTM": "UINT8",    # 1-byte truncated time (/10 min)
-    "TTH": "UINT8",    # 6-bit truncated time (/30 min)
-    "TTQ": "UINT8",    # 7-bit truncated time (/15 min)
-    "BDA": "CHAR4",    # 4-byte BCD date with weekday
-    "HDA": "CHAR4",    # 4-byte decimal date with weekday
-    "BDA3": "CHAR3",   # 3-byte BCD date
-    "HDA3": "CHAR3",   # 3-byte decimal date
-    "BDZ": "CHAR4",    # 4-byte BCD date with zero-based weekday
-    "DAY": "UINT16",   # 2-byte days since 1900-01-01
-    "DTM": "UINT32",   # 4-byte minutes since 2009-01-01
+    # Date/time types — native string-semantic DataTypes; BDY/HDY weekday
+    # pairs stay raw until their text formats land.
+    "BTI": "TIME_BCD3R",  # 3-byte BCD time, wire SS MM HH
+    "HTI": "TIME_BIN3",   # 3-byte decimal time, wire HH MM SS
+    "VTI": "TIME_BIN3R",  # 3-byte decimal time, wire SS MM HH [Vaillant]
+    "BTM": "TIME_BCD2R",  # 2-byte BCD time, wire MM HH
+    "HTM": "TIME_BIN2",   # 2-byte decimal time, wire HH MM
+    "VTM": "TIME_BIN2R",  # 2-byte decimal time hh:mm, wire MM HH [Vaillant]
+    "MIN": "TIME_MIN2",   # 2-byte minutes since midnight (LE)
+    "TTM": "TIME_TRUNC10",  # 1-byte truncated time (/10 min)
+    "TTH": "TIME_TRUNC30",  # 6-bit truncated time (/30 min)
+    "TTQ": "TIME_TRUNC15",  # 7-bit truncated time (/15 min)
+    "BDA": "DATE_BCD4",   # 4-byte BCD date with weekday
+    "HDA": "DATE_BIN4",   # 4-byte decimal date with weekday
+    "BDA3": "DATE_BCD3",  # 3-byte BCD date
+    "HDA3": "DATE_BIN3",  # 3-byte decimal date
+    "BDZ": "DATE_BCD4Z",  # 4-byte BCD date with zero-based weekday
+    "DAY": "DATE_DAY2",   # 2-byte days since 1900-01-01
+    "DTM": "DATETIME_MIN4",  # 4-byte minutes since 2009-01-01
     "BDY": "UINT8",    # 1-byte weekday (Mon=0)
     "HDY": "UINT8",    # 1-byte weekday [Vaillant] (Mon=1)
 }
@@ -142,15 +143,23 @@ TYPE_MAP: Dict[str, str] = {
 # Used to compute the eBUS write NN byte: NN = 3 + data_byte_count.
 DATATYPE_SIZE: Dict[str, int] = {
     # 1 byte
-    "BCD": 1, "UINT8": 1, "INT8": 1, "DATA1B": 1, "DATA1C": 1, "CHAR1": 1, "HEX1": 1,
+    "BCD8": 1, "UINT8": 1, "INT8": 1, "DATA1B": 1, "DATA1C": 1, "CHAR1": 1, "HEX1": 1,
+    "TIME_TRUNC10": 1, "TIME_TRUNC15": 1, "TIME_TRUNC30": 1,
     # 2 bytes
     "UINT16": 2, "UINT16R": 2, "INT16": 2, "INT16R": 2, "DATA2B": 2, "DATA2BR": 2,
-    "DATA2C": 2, "DATA2CR": 2, "CHAR2": 2, "HEX2": 2,
+    "DATA2C": 2, "DATA2CR": 2, "CHAR2": 2, "HEX2": 2, "BCD16": 2,
+    "PIN2": 2, "TIME_BIN2R": 2, "TIME_BIN2": 2, "TIME_MIN2": 2,
+    "TIME_BCD2R": 2, "DATE_DAY2": 2,
     # 3 bytes
     "UINT24": 3, "UINT24R": 3, "INT24": 3, "INT24R": 3, "CHAR3": 3, "HEX3": 3,
+    "BCD24": 3,
+    "DATE_BIN3": 3, "DATE_BCD3": 3, "TIME_BIN3": 3,
+    "TIME_BCD3R": 3, "TIME_BIN3R": 3,
     # 4 bytes
-    "UINT32": 4, "UINT32R": 4, "INT32": 4, "INT32R": 4, "FLOAT4": 4, "FLOAT4R": 4,
+    "UINT32": 4, "UINT32R": 4, "INT32": 4, "INT32R": 4, "FLOAT32": 4, "FLOAT32R": 4,
+    "BCD32": 4,
     "CHAR4": 4, "HEX4": 4,
+    "DATE_BCD4": 4, "DATE_BCD4Z": 4, "DATE_BIN4": 4, "DATETIME_MIN4": 4,
     # 5-8 bytes
     "CHAR5": 5, "HEX5": 5, "CHAR6": 6, "HEX6": 6, "CHAR7": 7, "HEX7": 7, "CHAR8": 8, "HEX8": 8,
     # 9-16 bytes (ebusd defines these via @maxLength on STR/HEX). The
@@ -166,15 +175,20 @@ DATATYPE_SIZE: Dict[str, int] = {
 # Source of truth: ebus::DataType enum in include/ebus/data_types.hpp.
 SUPPORTED_DATATYPES: set = {
     # 1 byte
-    "BCD", "UINT8", "INT8", "DATA1B", "DATA1C", "CHAR1", "HEX1",
+    "BCD8", "UINT8", "INT8", "DATA1B", "DATA1C", "CHAR1", "HEX1",
+    "TIME_TRUNC10", "TIME_TRUNC15", "TIME_TRUNC30",
     # 2 bytes
     "UINT16", "UINT16R", "INT16", "INT16R", "DATA2B", "DATA2BR",
-    "DATA2C", "DATA2CR", "CHAR2", "HEX2",
+    "DATA2C", "DATA2CR", "CHAR2", "HEX2", "BCD16",
+    "PIN2", "TIME_BIN2R", "TIME_BIN2", "TIME_MIN2", "TIME_BCD2R",
+    "DATE_DAY2",
     # 3 bytes
-    "UINT24", "UINT24R", "INT24", "INT24R", "CHAR3", "HEX3",
+    "UINT24", "UINT24R", "INT24", "INT24R", "CHAR3", "HEX3", "BCD24",
+    "DATE_BIN3", "DATE_BCD3", "TIME_BIN3", "TIME_BCD3R", "TIME_BIN3R",
     # 4 bytes
-    "UINT32", "UINT32R", "INT32", "INT32R", "FLOAT4", "FLOAT4R",
+    "UINT32", "UINT32R", "INT32", "INT32R", "FLOAT32", "FLOAT32R", "BCD32",
     "CHAR4", "HEX4",
+    "DATE_BCD4", "DATE_BCD4Z", "DATE_BIN4", "DATETIME_MIN4",
     # 5-8 bytes
     "CHAR5", "HEX5", "CHAR6", "HEX6", "CHAR7", "HEX7", "CHAR8", "HEX8",
     # 9-16 bytes
@@ -187,11 +201,11 @@ SUPPORTED_DATATYPES: set = {
 # These are from _templates.tsp and device-specific includes
 SCALAR_TYPE_MAP: Dict[str, str] = {
     # Counter types
-    "cntstarts": "CHAR3",      # BCD3 -> 3-byte raw (no native BCD3 DataType yet)
+    "cntstarts": "BCD24",      # BCD3 -> native 6-digit BCD
     "cntstarts2": "UINT16",    # UIN -> 2-byte unsigned
-    "cntminutes": "BCD",       # BCD -> 1 byte
-    "cnthours": "CHAR3",       # BCD3 -> 3 bytes
-    "cntfuel": "UINT32",       # BCD4 -> 4 bytes
+    "cntminutes": "BCD8",      # BCD -> 1 byte
+    "cnthours": "BCD24",       # BCD3 -> native 6-digit BCD
+    "cntfuel": "BCD32",        # BCD4 -> native 8-digit BCD
     # Temperature types
     "temp": "DATA2C",           # D2C -> 2-byte signed with special handling
     "temp0": "UINT8",          # UCH -> 1 byte unsigned
@@ -455,8 +469,8 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
     if unit_lower == "bar":
         if datatype == "DATA2B":
             return "data2b_bar"
-        if datatype == "FLOAT4":
-            return "float4_bar"
+        if datatype == "FLOAT32":
+            return "float32_bar"
         if datatype == "INT16":
             return "int16_bar"
     
@@ -522,15 +536,18 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "INT16": "int16",
         "INT24": "int24",
         "INT32": "int32",
-        "FLOAT4": "float4",
+        "FLOAT32": "float32",
         "UINT16R": "uint16r",
         "UINT24R": "uint24r",
         "INT16R": "int16r",
         "INT24R": "int24r",
         "UINT32R": "uint32r",
         "INT32R": "int32r",
-        "FLOAT4R": "float4r",
-        "BCD": "bcd",
+        "FLOAT32R": "float32r",
+        "BCD8": "bcd8",
+        "BCD16": "bcd16",
+        "BCD24": "bcd24",
+        "BCD32": "bcd32",
         "BOOL": "bool",
         "DATA2BR": "data2br",
         "DATA2CR": "data2cr",
@@ -566,6 +583,24 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "HEX14": "hex14",
         "HEX15": "hex15",
         "HEX16": "hex16",
+        "DATE_BCD4": "date_bcd4",
+        "DATE_BCD3": "date_bcd3",
+        "DATE_BCD4Z": "date_bcd4z",
+        "DATE_BIN3": "date_bin3",
+        "DATE_BIN4": "date_bin4",
+        "DATE_DAY2": "date_day2",
+        "DATETIME_MIN4": "datetime_min4",
+        "TIME_BCD3R": "time_bcd3r",
+        "TIME_BCD2R": "time_bcd2r",
+        "TIME_BIN3R": "time_bin3r",
+        "TIME_BIN3": "time_bin3",
+        "TIME_BIN2R": "time_bin2r",
+        "TIME_BIN2": "time_bin2",
+        "TIME_MIN2": "time_min2",
+        "TIME_TRUNC10": "time_trunc10",
+        "TIME_TRUNC15": "time_trunc15",
+        "TIME_TRUNC30": "time_trunc30",
+        "PIN2": "pin2",
     }
     return basic_map.get(datatype, "uint8")
 
