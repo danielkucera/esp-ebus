@@ -56,6 +56,14 @@ decode to formatted strings, not numbers.
 | BCD32 | 4 bytes | Little-endian pairs | Packed decimal (8 digits); `0xff` byte → null |
 | CHAR4-8 / HEX4-8 | 4-8 bytes | N/A | Character / hexadecimal data |
 
+### DataType naming convention (decided)
+
+Numeric value types state width in **bits** — `bcd8/16/24/32`, `uint*`,
+`int*`, `float32`; string-display types state width in **bytes** — `char*`,
+`hex*` (legacy stays: `hex104` = 13 bytes is why), date/time, `pin`;
+`data1b/1c/2b/2c` keep specification names (D1B…); other suffixes
+describe encoding/semantics, not type references (`r` byte-reversed, `z`
+zero-based weekday, `min`, `day`, `trunc10/15/30` = step in minutes).
 
 ### ebusd TypeSpec → ebus library mapping
 
