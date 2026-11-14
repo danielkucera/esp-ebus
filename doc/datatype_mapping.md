@@ -12,8 +12,8 @@ authoring and user overlays.
 Defined in `include/ebus/data_types.hpp`.
 Multi-byte numeric types use little-endian byte order by default; types ending
 in `R` reverse that byte order. `DATA2B` and `DATA2C` are signed fixed-point
-types with factors of 1/256 and 1/16, respectively. Date/time/PIN types bake
-their byte layout into the format (the `Endian` argument is ignored) and
+types with factors of 1/256 and 1/16, respectively. Date/time/PIN/TEM_P types
+bake their byte layout into the format (the `Endian` argument is ignored) and
 decode to formatted strings, not numbers.
 
 | ebus library DataType | Size | Endianness | Notes |
@@ -37,6 +37,7 @@ decode to formatted strings, not numbers.
 | TIME_BIN2 | 2 bytes | N/A | `HH:mm`, wire `HH MM` |
 | TIME_BCD2R | 2 bytes | N/A | BCD time, wire `MM HH`; renders `HH:mm` |
 | DATE_DAY2 | 2 bytes | Little-endian | Days since 01.01.1900; renders `dd.MM.yyyy` |
+| TEM_P | 2 bytes | N/A | Parameter id; renders `GG-NNN` (slave-packed) |
 | UINT24 / INT24 | 3 bytes | Little-endian | |
 | UINT24R / INT24R | 3 bytes | Big-endian | Reversed byte order |
 | CHAR3 / HEX3 | 3 bytes | N/A | Character / hexadecimal data |
@@ -61,9 +62,9 @@ decode to formatted strings, not numbers.
 Numeric value types state width in **bits** — `bcd8/16/24/32`, `uint*`,
 `int*`, `float32`; string-display types state width in **bytes** — `char*`,
 `hex*` (legacy stays: `hex104` = 13 bytes is why), date/time, `pin`;
-`data1b/1c/2b/2c` keep specification names (D1B…); other suffixes
-describe encoding/semantics, not type references (`r` byte-reversed, `z`
-zero-based weekday, `min`, `day`, `trunc10/15/30` = step in minutes).
+`data1b/1c/2b/2c` and `tem_p` keep specification names (D1B…, TEM_P); other
+suffixes describe encoding/semantics, not type references (`r` byte-reversed,
+`z` zero-based weekday, `min`, `day`, `trunc10/15/30` = step in minutes).
 
 ### ebusd TypeSpec → ebus library mapping
 
@@ -113,6 +114,7 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 | BDA3 | DATE_BCD3 | 15.ctlv2 (`errorHistoryEntry.date`) | BCD 3-byte date, wire `DD MM YY`; `dd.MM.yyyy` |
 | BDZ | DATE_BCD4Z | — (no vendored tsp usage) | BCD date + zero-based weekday; `dd.MM.yyyy` |
 | DAY | DATE_DAY2 | tem/15 (`Date.date`) | Days since 01.01.1900 (LE); `dd.MM.yyyy` |
+| TEM_P | TEM_P | tem/15 (`parameters_command_tem_p`) | Parameter id rendered `GG-NNN`; slave-packed `xxxx GGGG GNNN NNNN` (LE word); sentinel `0xffff` → null; master-side layout unused (read-response fields only) |
 | DTM | DATETIME_MIN4 | 15.e7c (`VacationStartTime`, `TimeDate`, …) | Minutes since 01.01.2009 (LE); `dd.MM.yyyy HH:mm` |
 | TTH | TIME_TRUNC30 | vaillant/quick_inc (`Save.value`) | 30-minute steps; `HH:mm` |
 | TTQ | TIME_TRUNC15 | — (no vendored tsp usage) | 15-minute steps; `HH:mm` |
@@ -140,12 +142,12 @@ Representative mappings from ebusd's base `_templates.tsp` and Vaillant
 
 ## App Data Profiles (`profiles/data_profiles.json`)
 
-The base file currently defines **83 data profiles**. At build time,
+The base file currently defines **84 data profiles**. At build time,
 `scripts/generate_data_profiles.py` merges the optional
 `profiles/data_profiles_user.json` overlay and generates
 `include/app/data_profile_gen.hpp`. A user overlay can add profiles or replace
 base entries with the same name, so the final compiled count can differ from
-83.
+84.
 
 ### Naming Convention
 
@@ -244,6 +246,7 @@ here, not that the profile is unsupported by ebusd.
 | `time_trunc15` | TIME_TRUNC15 | — | 1 | 0 | 0 | 0 | — | — |
 | `time_trunc30` | TIME_TRUNC30 | — | 1 | 0 | 0 | 0 | `Save.value` (TTH) | — |
 | `pin2` | PIN2 | — | 1 | 0 | 0 | 0 | `code` (PIN) | — |
+| `tem_p` | TEM_P | — | 1 | 0 | 0 | 0 | `TEM_P` | — |
 | `bcd16` | BCD16 | — | 1 | 0 | 0 | 0 | — | — |
 | `bcd24` | BCD24 | — | 1 | 0 | 0 | 0 | `cntstarts` / `cnthours` | — |
 | `bcd32` | BCD32 | — | 1 | 0 | 0 | 0 | `cntfuel` | — |

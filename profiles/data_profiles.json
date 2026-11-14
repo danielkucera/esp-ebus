@@ -78,6 +78,7 @@
   {"name": "time_trunc15", "datatype": "TIME_TRUNC15", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "time_trunc30", "datatype": "TIME_TRUNC30", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "pin2", "datatype": "PIN2", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
+  {"name": "tem_p", "datatype": "TEM_P", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "bcd16", "datatype": "BCD16", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "bcd24", "datatype": "BCD24", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},
   {"name": "bcd32", "datatype": "BCD32", "unit": "", "divider": 1, "digits": 0, "min": 0, "max": 0},

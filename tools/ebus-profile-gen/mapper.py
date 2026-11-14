@@ -1,4 +1,5 @@
 """Map tsp IR to our internal IR and group into profiles/commands."""
+
 from __future__ import annotations
 
 import re
@@ -18,19 +19,27 @@ TYPE_MAP: Dict[str, str] = {
     # 1 byte types
     "UCH": "UINT8",
     "SCH": "INT8",
-    "D1B": "DATA1B",   # 1-byte signed fixed-point (ebus::DataType::data1b)
-    "D1C": "DATA1C",   # 1-byte unsigned fixed-point /2 (ebus::DataType::data1c)
+    "D1B": "DATA1B",  # 1-byte signed fixed-point (ebus::DataType::data1b)
+    "D1C": "DATA1C",  # 1-byte unsigned fixed-point /2 (ebus::DataType::data1c)
     "BCD": "BCD8",
-    "HCD": "UINT8",    # 1-byte HCD: no native library type, treat as raw UINT8
-    "BI0": "UINT8", "BI1": "UINT8", "BI2": "UINT8", "BI3": "UINT8",
-    "BI4": "UINT8", "BI5": "UINT8", "BI6": "UINT8", "BI7": "UINT8",
-    "BI0_6": "UINT8", "BI0_7": "UINT8",
+    "HCD": "UINT8",  # 1-byte HCD: no native library type, treat as raw UINT8
+    "BI0": "UINT8",
+    "BI1": "UINT8",
+    "BI2": "UINT8",
+    "BI3": "UINT8",
+    "BI4": "UINT8",
+    "BI5": "UINT8",
+    "BI6": "UINT8",
+    "BI7": "UINT8",
+    "BI0_6": "UINT8",
+    "BI0_7": "UINT8",
     "U1L": "UINT8",
     "S1L": "INT8",
     "INT8": "INT8",
     "UINT8": "UINT8",
     # 2 byte types
-    "PIN": "PIN2",     # 2-byte BCD reversed, "0077" string output
+    "PIN": "PIN2",  # 2-byte BCD reversed, "0077" string output
+    "TEM_P": "TEM_P",  # 2-byte parameter id "GG-NNN" string output
     "UIN": "UINT16",
     "UIR": "UINT16R",
     "U2L": "UINT16",
@@ -39,18 +48,18 @@ TYPE_MAP: Dict[str, str] = {
     "SIR": "INT16R",
     "S2L": "INT16",
     "S2B": "INT16R",
-    "BCD2": "BCD16",   # 2-byte BCD digit pairs, little-endian pairs
-    "HCD2": "HEX2",    # 2-byte HCD digit bytes (0x00-0x63 each) → raw hex
-    "D2B": "DATA2B",   # 2-byte signed fixed-point /256 (ebus::DataType::data2b)
-    "D2C": "DATA2C",   # 2-byte signed fixed-point /16 (ebus::DataType::data2c)
-    "FLT": "INT16",    # 2-byte /1000 — INT16; no dedicated FLT type
-    "FLR": "INT16R",   # same, big-endian
+    "BCD2": "BCD16",  # 2-byte BCD digit pairs, little-endian pairs
+    "HCD2": "HEX2",  # 2-byte HCD digit bytes (0x00-0x63 each) → raw hex
+    "D2B": "DATA2B",  # 2-byte signed fixed-point /256 (ebus::DataType::data2b)
+    "D2C": "DATA2C",  # 2-byte signed fixed-point /16 (ebus::DataType::data2c)
+    "FLT": "INT16",  # 2-byte /1000 — INT16; no dedicated FLT type
+    "FLR": "INT16R",  # same, big-endian
     "INT16": "INT16",
     "UINT16": "UINT16",
     # 3 byte types — U3N/S3N families have native 24-bit DataTypes;
     # the no-sentinel U3L/U3B/S3L/S3B variants do not
-    "BCD3": "BCD24",   # 3-byte BCD (cntstarts, cnthours): native 6-digit BCD
-    "HCD3": "HEX3",    # 3-byte HCD digit bytes; no native decode → raw hex
+    "BCD3": "BCD24",  # 3-byte BCD (cntstarts, cnthours): native 6-digit BCD
+    "HCD3": "HEX3",  # 3-byte HCD digit bytes; no native decode → raw hex
     "U3N": "UINT24",
     "U3R": "UINT24R",
     "U3L": "HEX3",
@@ -70,7 +79,7 @@ TYPE_MAP: Dict[str, str] = {
     "SLR": "INT32R",
     "S4L": "INT32",
     "S4B": "INT32R",
-    "BCD4": "BCD32",   # 4-byte BCD digit pairs; HCD4 stays raw hex
+    "BCD4": "BCD32",  # 4-byte BCD digit pairs; HCD4 stays raw hex
     "HCD4": "HEX4",
     "EXP": "FLOAT32",
     "EXR": "FLOAT32R",
@@ -119,55 +128,114 @@ TYPE_MAP: Dict[str, str] = {
     # Date/time types — native string-semantic DataTypes; BDY/HDY weekday
     # pairs stay raw until their text formats land.
     "BTI": "TIME_BCD3R",  # 3-byte BCD time, wire SS MM HH
-    "HTI": "TIME_BIN3",   # 3-byte decimal time, wire HH MM SS
+    "HTI": "TIME_BIN3",  # 3-byte decimal time, wire HH MM SS
     "VTI": "TIME_BIN3R",  # 3-byte decimal time, wire SS MM HH [Vaillant]
     "BTM": "TIME_BCD2R",  # 2-byte BCD time, wire MM HH
-    "HTM": "TIME_BIN2",   # 2-byte decimal time, wire HH MM
+    "HTM": "TIME_BIN2",  # 2-byte decimal time, wire HH MM
     "VTM": "TIME_BIN2R",  # 2-byte decimal time hh:mm, wire MM HH [Vaillant]
-    "MIN": "TIME_MIN2",   # 2-byte minutes since midnight (LE)
+    "MIN": "TIME_MIN2",  # 2-byte minutes since midnight (LE)
     "TTM": "TIME_TRUNC10",  # 1-byte truncated time (/10 min)
     "TTH": "TIME_TRUNC30",  # 6-bit truncated time (/30 min)
     "TTQ": "TIME_TRUNC15",  # 7-bit truncated time (/15 min)
-    "BDA": "DATE_BCD4",   # 4-byte BCD date with weekday
-    "HDA": "DATE_BIN4",   # 4-byte decimal date with weekday
+    "BDA": "DATE_BCD4",  # 4-byte BCD date with weekday
+    "HDA": "DATE_BIN4",  # 4-byte decimal date with weekday
     "BDA3": "DATE_BCD3",  # 3-byte BCD date
     "HDA3": "DATE_BIN3",  # 3-byte decimal date
     "BDZ": "DATE_BCD4Z",  # 4-byte BCD date with zero-based weekday
-    "DAY": "DATE_DAY2",   # 2-byte days since 1900-01-01
+    "DAY": "DATE_DAY2",  # 2-byte days since 1900-01-01
     "DTM": "DATETIME_MIN4",  # 4-byte minutes since 2009-01-01
-    "BDY": "UINT8",    # 1-byte weekday (Mon=0)
-    "HDY": "UINT8",    # 1-byte weekday [Vaillant] (Mon=1)
+    "BDY": "UINT8",  # 1-byte weekday (Mon=0)
+    "HDY": "UINT8",  # 1-byte weekday [Vaillant] (Mon=1)
 }
 
 # Byte size per ebus-library DataType name (matches ebus::DataType enum high byte).
 # Used to compute the eBUS write NN byte: NN = 3 + data_byte_count.
 DATATYPE_SIZE: Dict[str, int] = {
     # 1 byte
-    "BCD8": 1, "UINT8": 1, "INT8": 1, "DATA1B": 1, "DATA1C": 1, "CHAR1": 1, "HEX1": 1,
-    "TIME_TRUNC10": 1, "TIME_TRUNC15": 1, "TIME_TRUNC30": 1,
+    "BCD8": 1,
+    "UINT8": 1,
+    "INT8": 1,
+    "DATA1B": 1,
+    "DATA1C": 1,
+    "CHAR1": 1,
+    "HEX1": 1,
+    "TIME_TRUNC10": 1,
+    "TIME_TRUNC15": 1,
+    "TIME_TRUNC30": 1,
     # 2 bytes
-    "UINT16": 2, "UINT16R": 2, "INT16": 2, "INT16R": 2, "DATA2B": 2, "DATA2BR": 2,
-    "DATA2C": 2, "DATA2CR": 2, "CHAR2": 2, "HEX2": 2, "BCD16": 2,
-    "PIN2": 2, "TIME_BIN2R": 2, "TIME_BIN2": 2, "TIME_MIN2": 2,
-    "TIME_BCD2R": 2, "DATE_DAY2": 2,
+    "UINT16": 2,
+    "UINT16R": 2,
+    "INT16": 2,
+    "INT16R": 2,
+    "DATA2B": 2,
+    "DATA2BR": 2,
+    "DATA2C": 2,
+    "DATA2CR": 2,
+    "CHAR2": 2,
+    "HEX2": 2,
+    "BCD16": 2,
+    "PIN2": 2,
+    "TIME_BIN2R": 2,
+    "TIME_BIN2": 2,
+    "TIME_MIN2": 2,
+    "TIME_BCD2R": 2,
+    "DATE_DAY2": 2,
+    "TEM_P": 2,
     # 3 bytes
-    "UINT24": 3, "UINT24R": 3, "INT24": 3, "INT24R": 3, "CHAR3": 3, "HEX3": 3,
+    "UINT24": 3,
+    "UINT24R": 3,
+    "INT24": 3,
+    "INT24R": 3,
+    "CHAR3": 3,
+    "HEX3": 3,
     "BCD24": 3,
-    "DATE_BIN3": 3, "DATE_BCD3": 3, "TIME_BIN3": 3,
-    "TIME_BCD3R": 3, "TIME_BIN3R": 3,
+    "DATE_BIN3": 3,
+    "DATE_BCD3": 3,
+    "TIME_BIN3": 3,
+    "TIME_BCD3R": 3,
+    "TIME_BIN3R": 3,
     # 4 bytes
-    "UINT32": 4, "UINT32R": 4, "INT32": 4, "INT32R": 4, "FLOAT32": 4, "FLOAT32R": 4,
+    "UINT32": 4,
+    "UINT32R": 4,
+    "INT32": 4,
+    "INT32R": 4,
+    "FLOAT32": 4,
+    "FLOAT32R": 4,
     "BCD32": 4,
-    "CHAR4": 4, "HEX4": 4,
-    "DATE_BCD4": 4, "DATE_BCD4Z": 4, "DATE_BIN4": 4, "DATETIME_MIN4": 4,
+    "CHAR4": 4,
+    "HEX4": 4,
+    "DATE_BCD4": 4,
+    "DATE_BCD4Z": 4,
+    "DATE_BIN4": 4,
+    "DATETIME_MIN4": 4,
     # 5-8 bytes
-    "CHAR5": 5, "HEX5": 5, "CHAR6": 6, "HEX6": 6, "CHAR7": 7, "HEX7": 7, "CHAR8": 8, "HEX8": 8,
+    "CHAR5": 5,
+    "HEX5": 5,
+    "CHAR6": 6,
+    "HEX6": 6,
+    "CHAR7": 7,
+    "HEX7": 7,
+    "CHAR8": 8,
+    "HEX8": 8,
     # 9-16 bytes (TypeSpec defines these via @maxLength on STR/HEX). The
     # protocol caps NN at 16 data bytes (spec 5.6, max_data_bytes), so
     # nothing wider than 16 can occur on the wire — no rows beyond this.
-    "CHAR9": 9, "HEX9": 9, "CHAR10": 10, "HEX10": 10, "CHAR11": 11, "HEX11": 11,
-    "CHAR12": 12, "HEX12": 12, "CHAR13": 13, "HEX13": 13, "CHAR14": 14, "HEX14": 14,
-    "CHAR15": 15, "HEX15": 15, "CHAR16": 16, "HEX16": 16,
+    "CHAR9": 9,
+    "HEX9": 9,
+    "CHAR10": 10,
+    "HEX10": 10,
+    "CHAR11": 11,
+    "HEX11": 11,
+    "CHAR12": 12,
+    "HEX12": 12,
+    "CHAR13": 13,
+    "HEX13": 13,
+    "CHAR14": 14,
+    "HEX14": 14,
+    "CHAR15": 15,
+    "HEX15": 15,
+    "CHAR16": 16,
+    "HEX16": 16,
 }
 
 # ebus-library native DataTypes it can actually decode/encode.
@@ -175,55 +243,117 @@ DATATYPE_SIZE: Dict[str, int] = {
 # Source of truth: ebus::DataType enum in include/ebus/data_types.hpp.
 SUPPORTED_DATATYPES: set = {
     # 1 byte
-    "BCD8", "UINT8", "INT8", "DATA1B", "DATA1C", "CHAR1", "HEX1",
-    "TIME_TRUNC10", "TIME_TRUNC15", "TIME_TRUNC30",
+    "BCD8",
+    "UINT8",
+    "INT8",
+    "DATA1B",
+    "DATA1C",
+    "CHAR1",
+    "HEX1",
+    "TIME_TRUNC10",
+    "TIME_TRUNC15",
+    "TIME_TRUNC30",
     # 2 bytes
-    "UINT16", "UINT16R", "INT16", "INT16R", "DATA2B", "DATA2BR",
-    "DATA2C", "DATA2CR", "CHAR2", "HEX2", "BCD16",
-    "PIN2", "TIME_BIN2R", "TIME_BIN2", "TIME_MIN2", "TIME_BCD2R",
+    "UINT16",
+    "UINT16R",
+    "INT16",
+    "INT16R",
+    "DATA2B",
+    "DATA2BR",
+    "DATA2C",
+    "DATA2CR",
+    "CHAR2",
+    "HEX2",
+    "BCD16",
+    "PIN2",
+    "TIME_BIN2R",
+    "TIME_BIN2",
+    "TIME_MIN2",
+    "TIME_BCD2R",
     "DATE_DAY2",
+    "TEM_P",
     # 3 bytes
-    "UINT24", "UINT24R", "INT24", "INT24R", "CHAR3", "HEX3", "BCD24",
-    "DATE_BIN3", "DATE_BCD3", "TIME_BIN3", "TIME_BCD3R", "TIME_BIN3R",
+    "UINT24",
+    "UINT24R",
+    "INT24",
+    "INT24R",
+    "CHAR3",
+    "HEX3",
+    "BCD24",
+    "DATE_BIN3",
+    "DATE_BCD3",
+    "TIME_BIN3",
+    "TIME_BCD3R",
+    "TIME_BIN3R",
     # 4 bytes
-    "UINT32", "UINT32R", "INT32", "INT32R", "FLOAT32", "FLOAT32R", "BCD32",
-    "CHAR4", "HEX4",
-    "DATE_BCD4", "DATE_BCD4Z", "DATE_BIN4", "DATETIME_MIN4",
+    "UINT32",
+    "UINT32R",
+    "INT32",
+    "INT32R",
+    "FLOAT32",
+    "FLOAT32R",
+    "BCD32",
+    "CHAR4",
+    "HEX4",
+    "DATE_BCD4",
+    "DATE_BCD4Z",
+    "DATE_BIN4",
+    "DATETIME_MIN4",
     # 5-8 bytes
-    "CHAR5", "HEX5", "CHAR6", "HEX6", "CHAR7", "HEX7", "CHAR8", "HEX8",
+    "CHAR5",
+    "HEX5",
+    "CHAR6",
+    "HEX6",
+    "CHAR7",
+    "HEX7",
+    "CHAR8",
+    "HEX8",
     # 9-16 bytes
-    "CHAR9", "HEX9", "CHAR10", "HEX10", "CHAR11", "HEX11",
-    "CHAR12", "HEX12", "CHAR13", "HEX13", "CHAR14", "HEX14",
-    "CHAR15", "HEX15", "CHAR16", "HEX16",
+    "CHAR9",
+    "HEX9",
+    "CHAR10",
+    "HEX10",
+    "CHAR11",
+    "HEX11",
+    "CHAR12",
+    "HEX12",
+    "CHAR13",
+    "HEX13",
+    "CHAR14",
+    "HEX14",
+    "CHAR15",
+    "HEX15",
+    "CHAR16",
+    "HEX16",
 }
 
 # Mapping from ebusd-configuration scalar names to our datatypes
 # These are from _templates.tsp and device-specific includes
 SCALAR_TYPE_MAP: Dict[str, str] = {
     # Counter types
-    "cntstarts": "BCD24",      # BCD3 -> native 6-digit BCD
-    "cntstarts2": "UINT16",    # UIN -> 2-byte unsigned
-    "cntminutes": "BCD8",      # BCD -> 1 byte
-    "cnthours": "BCD24",       # BCD3 -> native 6-digit BCD
-    "cntfuel": "BCD32",        # BCD4 -> native 8-digit BCD
+    "cntstarts": "BCD24",  # BCD3 -> native 6-digit BCD
+    "cntstarts2": "UINT16",  # UIN -> 2-byte unsigned
+    "cntminutes": "BCD8",  # BCD -> 1 byte
+    "cnthours": "BCD24",  # BCD3 -> native 6-digit BCD
+    "cntfuel": "BCD32",  # BCD4 -> native 8-digit BCD
     # Temperature types
-    "temp": "DATA2C",           # D2C -> 2-byte signed with special handling
-    "temp0": "UINT8",          # UCH -> 1 byte unsigned
-    "temp1": "DATA1C",         # D1C -> 1-byte signed with special handling
-    "temp2": "DATA2B",         # D2B -> 2-byte signed with special handling
-    "tempsensor": "DATA2C",    # typically D2C
+    "temp": "DATA2C",  # D2C -> 2-byte signed with special handling
+    "temp0": "UINT8",  # UCH -> 1 byte unsigned
+    "temp1": "DATA1C",  # D1C -> 1-byte signed with special handling
+    "temp2": "DATA2B",  # D2B -> 2-byte signed with special handling
+    "tempsensor": "DATA2C",  # typically D2C
     "tempmirrorsensor": "UINT16",  # UIN
-    "desiredtemp": "UINT8",    # UCH
-    "outsidetemp": "INT8",      # SCH
+    "desiredtemp": "UINT8",  # UCH
+    "outsidetemp": "INT8",  # SCH
     # Pressure types
-    "press": "DATA2B",         # D2B
-    "presssensor": "DATA2B",   # typically D2B
+    "press": "DATA2B",  # D2B
+    "presssensor": "DATA2B",  # typically D2B
     # Percentage types
-    "percent": "DATA2C",       # D2C with % unit
-    "percent0": "UINT8",       # UCH with % unit
-    "percent1": "DATA1C",      # D1C with % unit
-    "percent2": "DATA2B",      # D2B with % unit
-    "percents": "INT8",        # SCH with % unit
+    "percent": "DATA2C",  # D2C with % unit
+    "percent0": "UINT8",  # UCH with % unit
+    "percent1": "DATA1C",  # D1C with % unit
+    "percent2": "DATA2B",  # D2B with % unit
+    "percents": "INT8",  # SCH with % unit
     # Status/on-off types
     "onoff": "UINT8",
     "onoff2": "UINT8",
@@ -234,28 +364,28 @@ SCALAR_TYPE_MAP: Dict[str, str] = {
     "phaseok": "UINT8",
     "dcfstate": "UINT8",
     # Energy types
-    "energy4": "UINT32",       # typically ULG
-    "energy": "UINT16",        # UIN
-    "integral": "INT16",       # SIN
+    "energy4": "UINT32",  # typically ULG
+    "energy": "UINT16",  # UIN
+    "integral": "INT16",  # SIN
     # Flow / speed
-    "fanspeed": "UINT16",      # UIN
-    "fanspeedoffset": "INT16", # SIN
-    "flowrate": "UINT16",      # UIN
-    "flowrate100": "UINT16",   # UIN
-    "airflowrate": "UINT16",   # UIN
-    "speed": "UINT16",         # UIN
+    "fanspeed": "UINT16",  # UIN
+    "fanspeedoffset": "INT16",  # SIN
+    "flowrate": "UINT16",  # UIN
+    "flowrate100": "UINT16",  # UIN
+    "airflowrate": "UINT16",  # UIN
+    "speed": "UINT16",  # UIN
     # Time
-    "hoursum": "UINT32",       # ULG -> 4 bytes
-    "hoursum2": "UINT16",      # UIN -> 2 bytes
-    "hours": "UINT8",          # HCD / UCH -> 1 byte
-    "hours1": "DATA1C",        # D1C -> 1 byte / 2
-    "minutes": "UINT16",       # UIN
-    "minutes0": "UINT8",       # UCH
-    "minutes2": "UINT16",      # UIN
-    "seconds": "UINT32",       # ULG
-    "seconds0": "UINT8",       # UCH
-    "seconds2": "UINT16",      # UIN
-    "seconds4": "UINT32",      # ULG
+    "hoursum": "UINT32",  # ULG -> 4 bytes
+    "hoursum2": "UINT16",  # UIN -> 2 bytes
+    "hours": "UINT8",  # HCD / UCH -> 1 byte
+    "hours1": "DATA1C",  # D1C -> 1 byte / 2
+    "minutes": "UINT16",  # UIN
+    "minutes0": "UINT8",  # UCH
+    "minutes2": "UINT16",  # UIN
+    "seconds": "UINT32",  # ULG
+    "seconds0": "UINT8",  # UCH
+    "seconds2": "UINT16",  # UIN
+    "seconds4": "UINT32",  # ULG
     # Unit/string types
     "unit": "UINT8",
     "fueltype": "UINT8",
@@ -267,16 +397,16 @@ SCALAR_TYPE_MAP: Dict[str, str] = {
     "mcmode": "UINT8",
     "power": "UINT8",
     # Calibration
-    "calibration": "DATA2C",   # D2C
-    "calibration0": "UINT8",   # UCH
+    "calibration": "DATA2C",  # D2C
+    "calibration0": "UINT8",  # UCH
     "calibration1": "DATA1C",  # D1C
-    "calibrations": "INT8",    # SCH
+    "calibrations": "INT8",  # SCH
     # Misc numeric
-    "uin100": "UINT16",        # UIN
+    "uin100": "UINT16",  # UIN
     "version": "UINT16",
-    "pressm2": "UINT16",       # UIN
-    "curve": "UINT16",         # UIN
-    "frequency": "UINT16",     # UIN
+    "pressm2": "UINT16",  # UIN
+    "curve": "UINT16",  # UIN
+    "frequency": "UINT16",  # UIN
     # Skip/ignore
     "skip": "UINT8",
     # String types
@@ -325,9 +455,7 @@ _WRITABLE_TEMPLATES = {
 # command carrying one is dropped (resolved type "boolean"/"BOOL" as well
 # as the raw scalar names when the typespec library is not loaded).
 _BIT_GATED_EBUS_TYPES = frozenset(
-    {"boolean", "BOOL"}
-    | {f"BI{i}" for i in range(8)}
-    | {"phase1", "phase2", "phase3"}
+    {"boolean", "BOOL"} | {f"BI{i}" for i in range(8)} | {"phase1", "phase2", "phase3"}
 )
 
 
@@ -376,7 +504,10 @@ def _merge_bit_runs(fields: List[FieldIR]) -> List[FieldIR]:
                 bitlen=8,
                 mask=head.mask,
                 our_datatype="UINT8",
-                meta={**head.meta, "bits": {f.name: _bit_index(f.ebus_type) for f in run}},
+                meta={
+                    **head.meta,
+                    "bits": {f.name: _bit_index(f.ebus_type) for f in run},
+                },
             )
         )
     return merged
@@ -409,7 +540,9 @@ def _map_type(ebus_type: str, max_length: Optional[int] = None) -> str:
     return SCALAR_TYPE_MAP.get(t, ebus_type.upper() if ebus_type else "")
 
 
-def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]] = None) -> str:
+def _classify_type(
+    ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]] = None
+) -> str:
     """Classify a TypeSpec type for the conversion log.
 
     Returns one of: native, profile, unsupported, defaulted.
@@ -425,7 +558,7 @@ def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]
     if d.startswith(("CHAR", "HEX")):
         try:
             prefix = "CHAR" if d.startswith("CHAR") else "HEX"
-            width = int(d[len(prefix):])
+            width = int(d[len(prefix) :])
         except ValueError:
             width = 0
         if width > 16:
@@ -442,15 +575,17 @@ def _classify_type(ebus_type: str, datatype: str, enums: Optional[Dict[str, Any]
     return "defaulted"
 
 
-def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = None) -> str:
+def _map_profile_name(
+    ebus_type: str, unit: str, max_length: Optional[int] = None
+) -> str:
     """Map a field's ebus_type and unit to a profile name in data_profiles.json.
-    
+
     This uses the datatype and unit to determine the appropriate profile name.
     """
     # Get the mapped datatype
     datatype = _map_type(ebus_type, max_length)
     unit_lower = (unit or "").strip().lower()
-    
+
     # Special mappings based on type + unit combinations
     # Temperature
     if "celsius" in unit_lower or unit_lower == "°c" or unit_lower == "c":
@@ -464,7 +599,7 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
             return "int8_celsius"
         if datatype == "UINT8":
             return "uint8_celsius"
-    
+
     # Pressure
     if unit_lower == "bar":
         if datatype == "DATA2B":
@@ -473,7 +608,7 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
             return "float32_bar"
         if datatype == "INT16":
             return "int16_bar"
-    
+
     # Percentage
     if unit_lower in ("%", "percent"):
         if datatype == "INT16":
@@ -482,19 +617,19 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
             return "uint8_percent"
         if datatype == "INT8":
             return "int8_percent_div10"
-    
+
     # Power
     if unit_lower == "kw":
         if datatype == "UINT8":
             return "uint8_kw"
         if datatype == "UINT16":
             return "uint16_kw_div10"
-    
+
     # Energy
     if unit_lower == "kwh":
         if datatype == "UINT32":
             return "uint32_kwh"
-    
+
     # Flow rate
     if unit_lower in ("l/min", "lpm"):
         if datatype == "DATA2C":
@@ -505,27 +640,27 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
     if unit_lower == "m3/h":
         if datatype == "UINT16":
             return "uint16_m3h"
-    
+
     # Time
     if unit_lower == "h" or unit_lower == "hour":
         if datatype == "UINT32":
             return "uint32_hour"
         if datatype == "UINT16":
             return "uint16_hour"
-    
+
     if unit_lower == "min" or unit_lower == "minute":
         if datatype == "UINT16":
             return "uint16_min_div120"
-    
+
     # RPM
     if unit_lower == "rpm":
         if datatype == "UINT16":
             return "uint16_rpm"
-    
+
     # Basic type fallback
     basic_map = {
         "DATA2C": "data2c",
-        "DATA2B": "data2b", 
+        "DATA2B": "data2b",
         "DATA1C": "data1c",
         "DATA1B": "data1b",
         "UINT8": "uint8",
@@ -601,6 +736,7 @@ def _map_profile_name(ebus_type: str, unit: str, max_length: Optional[int] = Non
         "TIME_TRUNC15": "time_trunc15",
         "TIME_TRUNC30": "time_trunc30",
         "PIN2": "pin2",
+        "TEM_P": "tem_p",
     }
     return basic_map.get(datatype, "uint8")
 
@@ -637,7 +773,7 @@ def _camel_to_snake(name: str) -> str:
 
 def _format_command_name(model_name: str, namespace: str = "") -> str:
     """Format a command name from model name and namespace.
-    
+
     Converts CamelCase to hierarchy format like Buffer/Middle_Temperature
     """
     # Split by namespace if present
@@ -648,19 +784,19 @@ def _format_command_name(model_name: str, namespace: str = "") -> str:
         for ns in ns_parts:
             if ns and ns != "Vaillant":
                 parts.append(_camel_to_snake(ns))
-    
+
     # Add the model name
     model_snake = _camel_to_snake(model_name)
-    
+
     # For models that look like they're in groups, split them
     # e.g., "HwcTemp" -> we might want to keep as is or split
     # But from the working commands.json, names are like:
     # "Buffer/Middle_Temperature", "Compressor/Hours"
     # So we need to understand the naming convention from ebusd-configuration
-    
+
     # For now, just use the model name as-is in snake_case
     parts.append(model_snake)
-    
+
     return "/".join(parts) if parts else model_snake
 
 
@@ -669,9 +805,7 @@ def tsp_type_to_datatype(tsp_type: str) -> str:
     return _map_type(tsp_type)
 
 
-def profiles_to_flat_entries(
-    fam: FamilyIR, log: Any = None
-) -> List[Dict[str, Any]]:
+def profiles_to_flat_entries(fam: FamilyIR, log: Any = None) -> List[Dict[str, Any]]:
     """Convert FamilyIR commands to flat data_profiles.json schema entries.
 
     Each unique field profile becomes one flat entry:
@@ -727,7 +861,9 @@ def profiles_to_flat_entries(
             seen.add(dedup_key)
 
             # Canonical profile name (same mapping commands use for references)
-            profile_name = _map_profile_name(f.ebus_type, unit, _max_length_from_meta(f.meta))
+            profile_name = _map_profile_name(
+                f.ebus_type, unit, _max_length_from_meta(f.meta)
+            )
 
             # Disambiguate name collisions
             original_name = profile_name
@@ -803,7 +939,7 @@ def commands_to_flat_entries(
     log = log if log is not None else NULL_LOG
     entries: List[Dict[str, Any]] = []
     seen_read_id: Dict[str, str] = {}
-    
+
     # Try to get MF from aliases if not in meta
     default_mf = 0x00
     if aliases and "MF" in aliases:
@@ -811,11 +947,11 @@ def commands_to_flat_entries(
             default_mf = int(aliases["MF"], 16)
         except ValueError:
             default_mf = 0x00
-    
+
     for idx, c in enumerate(fam.commands, start=1):
         meta = c.meta or {}
         namespace = meta.get("namespace", "")
-        
+
         # Get addressing from meta.
         # Command layout: ZZ + id, where id = PB SB D... (2..6 bytes).
         # The D tail comes from the parser-resolved read_tail/write_tail
@@ -868,7 +1004,7 @@ def commands_to_flat_entries(
         # Explicit read NN only when it differs from the derived len(id)-2
         # and the command actually has a read side.
         nn_hex = f"{nn_read:02x}" if (nn_read != 3 and id_hex) else ""
-    
+
         if c.rw == "write" and "write_nn" not in meta:
             log.debug(
                 "command",
@@ -892,16 +1028,16 @@ def commands_to_flat_entries(
             wid=wid_hex,
             rw=c.rw,
         )
-        
+
         # Determine key
         # Use sequential numbering with 3-digit zero-padding by default
         # This matches the working commands.json format ("01", "02", etc.)
         key = f"{idx:03d}"
-        
+
         # Override with prefix if provided
         if key_prefix:
             key = f"{key_prefix}{key}"
-        
+
         # Build fields with 1-based byte positions: position = 1 + cumulative
         # byte offset of preceding datatype sizes (firmware uses
         # field_pos = position - 1 to index into the data part).
@@ -909,12 +1045,14 @@ def commands_to_flat_entries(
         byte_offset = 0
         for f in c.fields:
             # Get the profile name based on type and unit
-            profile = _map_profile_name(f.ebus_type, f.unit or "", _max_length_from_meta(f.meta))
-            
+            profile = _map_profile_name(
+                f.ebus_type, f.unit or "", _max_length_from_meta(f.meta)
+            )
+
             # Get min/max overrides from field meta
             min_val = f.meta.get("min") if f.meta.get("min") is not None else None
             max_val = f.meta.get("max") if f.meta.get("max") is not None else None
-            
+
             field_entry = {
                 "name": f.name,
                 "profile": profile,
@@ -923,7 +1061,7 @@ def commands_to_flat_entries(
                 # binary_sensor per bit (values payload expands the byte).
                 "ha_profile": "binary_sensor" if f.meta.get("bits") else "",
             }
-            
+
             # Add min/max if present
             if min_val is not None:
                 field_entry["min"] = min_val
@@ -931,9 +1069,9 @@ def commands_to_flat_entries(
                 field_entry["max"] = max_val
             if f.meta.get("bits"):
                 field_entry["bits"] = f.meta["bits"]
-            
+
             fields.append(field_entry)
-            
+
             datatype = f.our_datatype or _map_type(
                 f.ebus_type, _max_length_from_meta(f.meta)
             )
@@ -954,12 +1092,14 @@ def commands_to_flat_entries(
                 action="profile_selected",
                 name=f.name,
                 input_type=f.ebus_type,
-                datatype=f.our_datatype or _map_type(f.ebus_type, _max_length_from_meta(f.meta)),
+                datatype=f.our_datatype
+                or _map_type(f.ebus_type, _max_length_from_meta(f.meta)),
                 unit=f.unit or "",
                 profile=profile,
                 classification=_classify_type(
                     f.ebus_type,
-                    f.our_datatype or _map_type(f.ebus_type, _max_length_from_meta(f.meta)),
+                    f.our_datatype
+                    or _map_type(f.ebus_type, _max_length_from_meta(f.meta)),
                 ),
             )
 
@@ -1020,7 +1160,7 @@ def commands_to_flat_entries(
             rw=c.rw,
             fields=len(fields),
         )
-    
+
     return entries
 
 
@@ -1051,7 +1191,7 @@ def build_profiles_and_commands(
 
     # Build a namespace context from the file structure
     # For now, we'll extract it from the register meta if available
-    
+
     # Resolve scalar aliases and types: if a field type is an alias or scalar,
     # follow to the base type and collect metadata
     def resolve_type_and_meta(t: str) -> tuple[str, Dict[str, Any]]:
@@ -1060,7 +1200,7 @@ def build_profiles_and_commands(
         t = _strip_qualified(t)
         visited: set[str] = set()
         meta: Dict[str, Any] = {}
-        
+
         # Follow alias chain
         while t in aliases and t not in visited:
             visited.add(t)
@@ -1072,7 +1212,7 @@ def build_profiles_and_commands(
                 t = _strip_qualified(scalar.get("base_type", ""))
             else:
                 t = _strip_qualified(alias_val)
-        
+
         # Follow scalar chain
         while t in scalars and t not in visited:
             visited.add(t)
@@ -1091,14 +1231,14 @@ def build_profiles_and_commands(
                 meta["values_enum"] = scalar["values_enum"]
             if scalar.get("max_length"):
                 meta["max_length"] = scalar["max_length"]
-            
+
             t = _strip_qualified(scalar.get("base_type", ""))
-        
+
         # Check if it's an enum
         if t in enums:
             meta["values_enum"] = t
             meta["values"] = enums[t].get("entries", [])
-        
+
         datatype = _map_type(t)
         classification = _classify_type(t, datatype, enums)
         if classification == "defaulted":
@@ -1224,14 +1364,14 @@ def build_profiles_and_commands(
         template_name = reg.get("template")
         template_type = reg.get("template_type")
         namespace = meta.get("namespace", "")
-        
+
         # Store namespace in meta for later use
         if namespace:
             meta["namespace"] = namespace
-        
+
         # Build FieldIR list from raw fields
         field_irs: List[FieldIR] = []
-        
+
         if template_name and template_type:
             # Composite template argument (e.g. Timer<timer>): expand into
             # positioned leaf sub-fields. Mapped arguments (e.g. phase) are
@@ -1257,17 +1397,19 @@ def build_profiles_and_commands(
             elif template_name in _SINGLE_FIELD_TEMPLATES:
                 # Single field template: the type is template_type
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
-                
+
                 f_ebus_type = resolved_type
-                f_our_datatype = _map_type(f_ebus_type, _max_length_from_meta(type_meta))
-                
+                f_our_datatype = _map_type(
+                    f_ebus_type, _max_length_from_meta(type_meta)
+                )
+
                 # Get unit from template_type metadata or scalar
                 f_unit = type_meta.get("unit", "")
-                
+
                 # Parse factor
                 factor_str = type_meta.get("factor", type_meta.get("divisor", ""))
                 factor_val = _parse_factor(factor_str) if factor_str else None
-                
+
                 # Determine digits
                 digits = type_meta.get("digits", 0)
                 if isinstance(digits, str):
@@ -1275,7 +1417,7 @@ def build_profiles_and_commands(
                         digits = int(digits)
                     except ValueError:
                         digits = 0
-                
+
                 # Create field IR for the value field
                 field_ir = FieldIR(
                     name="value",
@@ -1284,8 +1426,10 @@ def build_profiles_and_commands(
                     factor=str(factor_val) if factor_val is not None else "",
                     offset="",
                     length=0,
-                    signed=f_ebus_type.startswith(("S", "s")) or f_our_datatype.startswith("INT"),
-                    big_endian="R" in f_ebus_type or ("B" in f_ebus_type and "L" not in f_ebus_type),
+                    signed=f_ebus_type.startswith(("S", "s"))
+                    or f_our_datatype.startswith("INT"),
+                    big_endian="R" in f_ebus_type
+                    or ("B" in f_ebus_type and "L" not in f_ebus_type),
                     bitfield=False,
                     bitpos=-1,
                     bitlen=0,
@@ -1294,14 +1438,16 @@ def build_profiles_and_commands(
                     meta=type_meta,
                 )
                 field_irs.append(field_ir)
-            
+
             elif template_name in _TWO_FIELD_TEMPLATES:
                 # Two field template: value + service
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
-                
+
                 # Value field
                 f_ebus_type = resolved_type
-                f_our_datatype = _map_type(f_ebus_type, _max_length_from_meta(type_meta))
+                f_our_datatype = _map_type(
+                    f_ebus_type, _max_length_from_meta(type_meta)
+                )
                 f_unit = type_meta.get("unit", "")
                 factor_str = type_meta.get("factor", type_meta.get("divisor", ""))
                 factor_val = _parse_factor(factor_str) if factor_str else None
@@ -1311,7 +1457,7 @@ def build_profiles_and_commands(
                         digits = int(digits)
                     except ValueError:
                         digits = 0
-                
+
                 field_ir = FieldIR(
                     name="value",
                     ebus_type=f_ebus_type,
@@ -1319,8 +1465,10 @@ def build_profiles_and_commands(
                     factor=str(factor_val) if factor_val is not None else "",
                     offset="",
                     length=0,
-                    signed=f_ebus_type.startswith(("S", "s")) or f_our_datatype.startswith("INT"),
-                    big_endian="R" in f_ebus_type or ("B" in f_ebus_type and "L" not in f_ebus_type),
+                    signed=f_ebus_type.startswith(("S", "s"))
+                    or f_our_datatype.startswith("INT"),
+                    big_endian="R" in f_ebus_type
+                    or ("B" in f_ebus_type and "L" not in f_ebus_type),
                     bitfield=False,
                     bitpos=-1,
                     bitlen=0,
@@ -1329,15 +1477,17 @@ def build_profiles_and_commands(
                     meta=type_meta,
                 )
                 field_irs.append(field_ir)
-                
+
                 # Service field (UINT8)
                 field_irs.append(_service_field_ir())
             else:
                 # Unknown template: assume single value field
                 resolved_type, type_meta = resolve_type_and_meta(template_type)
                 f_ebus_type = resolved_type
-                f_our_datatype = _map_type(f_ebus_type, _max_length_from_meta(type_meta))
-                
+                f_our_datatype = _map_type(
+                    f_ebus_type, _max_length_from_meta(type_meta)
+                )
+
                 field_ir = FieldIR(
                     name="value",
                     ebus_type=f_ebus_type,
@@ -1345,8 +1495,10 @@ def build_profiles_and_commands(
                     factor=type_meta.get("factor", ""),
                     offset="",
                     length=0,
-                    signed=f_ebus_type.startswith(("S", "s")) or f_our_datatype.startswith("INT"),
-                    big_endian="R" in f_ebus_type or ("B" in f_ebus_type and "L" not in f_ebus_type),
+                    signed=f_ebus_type.startswith(("S", "s"))
+                    or f_our_datatype.startswith("INT"),
+                    big_endian="R" in f_ebus_type
+                    or ("B" in f_ebus_type and "L" not in f_ebus_type),
                     bitfield=False,
                     bitpos=-1,
                     bitlen=0,
@@ -1356,13 +1508,19 @@ def build_profiles_and_commands(
                 )
                 field_irs.append(field_ir)
         else:
-            # Regular model with explicit fields
+            # Regular model with explicit fields. A template definition
+            # (template_type set, no instantiating model) only holds
+            # unresolved placeholder fields (e.g. `value: T;`); it never
+            # becomes a command and its fields are discarded below, so
+            # resolve nothing and keep the placeholders from warning.
+            if template_name is None and template_type is not None:
+                reg_fields = []
             for f in reg_fields:
                 f_name = f.get("name", "")
                 f_ebus_type = f.get("ebus_type", "")
                 f_decorators = f.get("decorators", [])
                 f_meta = f.get("meta", {})
-                
+
                 # Composite field: plain model without a library mapping of
                 # its own (mapped types like phase are never expanded) →
                 # emit positioned leaf sub-fields instead of the raw type.
@@ -1380,18 +1538,18 @@ def build_profiles_and_commands(
                         )
                         field_irs.extend(leaves)
                         continue
-                
+
                 # Resolve the type and get metadata
                 resolved_type, type_meta = resolve_type_and_meta(f_ebus_type)
-                
+
                 # Merge metadata
                 merged_meta = {**type_meta, **f_meta}
-                
+
                 # If field has its own decorators, extract metadata from them
                 for dec in f_decorators:
                     dname = dec.get("name", "")
                     args = dec.get("args", [])
-                    
+
                     if dname == "unit" and args:
                         merged_meta["unit"] = args[0].strip('"').strip("'")
                     elif dname == "factor" and args:
@@ -1422,26 +1580,28 @@ def build_profiles_and_commands(
                                 merged_meta["max"] = float(args[0])
                             except ValueError:
                                 pass
-                
+
                 # Determine signedness
                 signed = resolved_type.startswith(("S", "s"))
-                
+
                 # Determine endianness
-                big_endian = "R" in resolved_type or ("B" in resolved_type and "L" not in resolved_type)
-                
+                big_endian = "R" in resolved_type or (
+                    "B" in resolved_type and "L" not in resolved_type
+                )
+
                 # Bitfield info
                 bitfield = f.get("bitfield", False)
                 bitpos = f.get("bitpos", -1)
                 bitlen = f.get("bitlen", 0)
                 mask = f.get("mask", "")
-                
+
                 # Get factor from merged metadata
                 factor_str = merged_meta.get("factor", merged_meta.get("divisor", ""))
                 factor_val = _parse_factor(factor_str) if factor_str else None
-                
+
                 # Get unit from merged metadata
                 unit = merged_meta.get("unit", "")
-                
+
                 # Get digits
                 digits = merged_meta.get("digits", 0)
                 if isinstance(digits, str):
@@ -1449,7 +1609,7 @@ def build_profiles_and_commands(
                         digits = int(digits)
                     except ValueError:
                         digits = 0
-                
+
                 field_ir = FieldIR(
                     name=f_name,
                     ebus_type=resolved_type or f_ebus_type,
@@ -1463,7 +1623,9 @@ def build_profiles_and_commands(
                     bitpos=bitpos,
                     bitlen=bitlen,
                     mask=mask,
-                    our_datatype=_map_type(resolved_type or f_ebus_type, _max_length_from_meta(merged_meta)),
+                    our_datatype=_map_type(
+                        resolved_type or f_ebus_type, _max_length_from_meta(merged_meta)
+                    ),
                     meta=merged_meta,
                 )
                 field_irs.append(field_ir)
@@ -1486,9 +1648,7 @@ def build_profiles_and_commands(
 
         if reg.get("unsupported"):
             unsupported = True
-            unsupported_reason = reg.get(
-                "unsupported_reason", "unsupported register"
-            )
+            unsupported_reason = reg.get("unsupported_reason", "unsupported register")
 
         if rw not in ("read", "write"):
             unsupported = True
