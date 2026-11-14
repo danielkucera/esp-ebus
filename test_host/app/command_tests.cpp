@@ -4,6 +4,7 @@
 #include <ebus/data_types.hpp>
 #include <ebus/detail/json_reader.hpp>
 #include <ebus/detail/json_writer.hpp>
+#include <ebus/utils.hpp>
 
 #include "app/command.hpp"
 #include "app/command_manager.hpp"
@@ -40,7 +41,7 @@ TEST_CASE("Command fromTabular roundtrip preserves fields", "[Command]") {
                      R"("position":1,"ha_profile":"sensor_temperature"}])";
 
   JsonReader reader(json);
-  Command cmd = Command::fromTabular(reader);
+  Command cmd = Command::fromTabular(reader, true);
 
   REQUIRE(cmd.getKey() == "01");
   REQUIRE(cmd.getName() == "Outside_Temperature");
@@ -111,9 +112,22 @@ TEST_CASE("Command toJson serializes fields", "[Command]") {
     auto scope = writer.objectScope();
     writer.writeField("key", cmd.getKey());
     writer.writeField("name", cmd.getName());
-    writer.writeHexField("read_cmd", cmd.getReadCmd());
-    CommandManager command_manager;
-    writer.writeHexField("write_cmd", cmd.getWriteCmd(command_manager));
+    writer.writeHexField("zz", cmd.getZz());
+    writer.writeHexField("pbsb", ebus::range(cmd.getId(), 0, 2));
+    if (cmd.getId().size() > 2) {
+      writer.writeHexField("dx",
+                           ebus::range(cmd.getId(), 2, cmd.getId().size() - 2));
+    }
+    if (cmd.hasNnOverride()) {
+      writer.writeHexField("nn", cmd.getNn());
+    }
+    if (cmd.hasWriteCmd()) {
+      writer.writeHexField("wpbsb", ebus::range(cmd.getWid(), 0, 2));
+      if (cmd.getWid().size() > 2) {
+        writer.writeHexField(
+            "wdx", ebus::range(cmd.getWid(), 2, cmd.getWid().size() - 2));
+      }
+    }
     writer.writeField("interval", cmd.getInterval());
 
     {
@@ -134,6 +148,11 @@ TEST_CASE("Command toJson serializes fields", "[Command]") {
 
   REQUIRE(out.find("\"key\":\"01\"") != std::string::npos);
   REQUIRE(out.find("\"name\":\"Test\"") != std::string::npos);
+  REQUIRE(out.find("\"zz\":\"fe\"") != std::string::npos);
+  REQUIRE(out.find("\"pbsb\":\"0700\"") != std::string::npos);
+  REQUIRE(out.find("\"nn\":\"09\"") != std::string::npos);
+  REQUIRE(out.find("\"wid\"") == std::string::npos);
+  REQUIRE(out.find("\"wpbsb\"") == std::string::npos);
   REQUIRE(out.find("\"fields\"") != std::string::npos);
   REQUIRE(out.find("\"profile\":\"data2b_celsius\"") != std::string::npos);
   REQUIRE(out.find("\"position\":1") != std::string::npos);
@@ -253,6 +272,94 @@ TEST_CASE("Command getVectorFromString demands exact bytes", "[Command]") {
   REQUIRE(cmd.getVectorFromString("0xab", 0).empty());
 }
 
+TEST_CASE("Command getVectorFromString parses date/time/pin formats",
+          "[Command]") {
+  // DATE_BCD4: semantic text is 10 chars, the wire field 4 bytes — the
+  // CHAR exact-length gate must not apply.
+  std::string djson =
+      R"({"key":"t2","name":"DateWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"d","profile":"date_bcd4","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader dreader(djson);
+  Command dcmd = Command::fromJson(dreader);
+  REQUIRE(dcmd.getFieldCount() == 1);
+  REQUIRE(dcmd.getFieldDatatype(0) == ebus::DataType::date_bcd4);
+
+  // 17.03.2021 (Wed) -> wire DD MM WW YY.
+  ebus::Sequence ok = dcmd.getVectorFromString("17.03.2021", 0);
+  REQUIRE(ok.size() == 4);
+  REQUIRE(ok[0] == 0x17);
+  REQUIRE(ok[1] == 0x03);
+  REQUIRE(ok[2] == 0x03);
+  REQUIRE(ok[3] == 0x21);
+
+  // Malformed input rejects via encode(), never falls into the CHAR gate.
+  REQUIRE(dcmd.getVectorFromString("2021-03-17", 0).empty());
+  REQUIRE(dcmd.getVectorFromString("17.13.2021", 0).empty());
+  REQUIRE(dcmd.getVectorFromString("17.03.202", 0).empty());
+
+  // "null" token writes the wire replacement.
+  ebus::Sequence nul = dcmd.getVectorFromString("null", 0);
+  REQUIRE(nul.size() == 4);
+  REQUIRE(nul[0] == 0xff);
+
+  // DATETIME_MIN4: "dd.MM.yyyy HH:mm" (16 chars) -> LE u32 minutes since
+  // 01.01.2009; the DATE prefix match must cover DATETIME as well.
+  std::string xjson =
+      R"({"key":"t5","name":"DateTimeWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"x","profile":"datetime_min4","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader xreader(xjson);
+  Command xcmd = Command::fromJson(xreader);
+  REQUIRE(xcmd.getFieldCount() == 1);
+  REQUIRE(xcmd.getFieldDatatype(0) == ebus::DataType::datetime_min4);
+  ebus::Sequence xok = xcmd.getVectorFromString("15.06.2024 14:37", 0);
+  REQUIRE(xok.size() == 4);
+  REQUIRE(xok[0] == 0xed);
+  REQUIRE(xok[1] == 0x06);
+  REQUIRE(xok[2] == 0x7c);
+  REQUIRE(xok[3] == 0x00);
+  // Missing separator or trailing seconds never parse.
+  REQUIRE(xcmd.getVectorFromString("15.06.202414:37", 0).empty());
+  REQUIRE(xcmd.getVectorFromString("15.06.2024 14:37:00", 0).empty());
+
+  // TIME_BCD3R: "07:42:16" -> wire SS MM HH.
+  std::string tjson =
+      R"({"key":"t3","name":"TimeWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"t","profile":"time_bcd3r","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader treader(tjson);
+  Command tcmd = Command::fromJson(treader);
+  REQUIRE(tcmd.getFieldCount() == 1);
+  ebus::Sequence tok = tcmd.getVectorFromString("07:42:16", 0);
+  REQUIRE(tok.size() == 3);
+  REQUIRE(tok[0] == 0x16);
+  REQUIRE(tok[1] == 0x42);
+  REQUIRE(tok[2] == 0x07);
+  // Seconds are required for this type; trailing junk never parses.
+  REQUIRE(tcmd.getVectorFromString("07:42", 0).empty());
+  REQUIRE(tcmd.getVectorFromString("07:42:16x", 0).empty());
+
+  // PIN2: 4-digit text -> big-endian BCD digits.
+  std::string pjson =
+      R"({"key":"t4","name":"PinWrite","read_cmd":"080704","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"code","profile":"pin2","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader preader(pjson);
+  Command pcmd = Command::fromJson(preader);
+  REQUIRE(pcmd.getFieldCount() == 1);
+  ebus::Sequence pok = pcmd.getVectorFromString("0077", 0);
+  REQUIRE(pok.size() == 2);
+  REQUIRE(pok[0] == 0x00);
+  REQUIRE(pok[1] == 0x77);
+  REQUIRE(pcmd.getVectorFromString("abcd", 0).empty());
+  REQUIRE(pcmd.getVectorFromString("10000", 0).empty());
+}
+
 TEST_CASE("Command getVectorFromJson rejects garbage numerics", "[Command]") {
   std::string json =
       R"({"key":"01","name":"Outside_Temperature","read_cmd":"fe070009",)"
@@ -338,8 +445,7 @@ TEST_CASE("Weishaupt room writes reproduce captured 5023 telegrams",
   }
 }
 
-TEST_CASE("Standard writes preserve bytes even for a 5023 prefix",
-          "[Command]") {
+TEST_CASE("Standard writes derive NN even for a 5023 prefix", "[Command]") {
   const char* prefixes[] = {"50b509040e3300", "70502309ab0500"};
   for (auto prefix : prefixes) {
     std::string json =
@@ -353,18 +459,46 @@ TEST_CASE("Standard writes preserve bytes even for a 5023 prefix",
     const uint8_t value[] = {0xaa, 0x00};
     auto frame =
         cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2));
-    auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
+    uint8_t prefix_buf[8];
+    size_t prefix_len = ebus::toBytes(prefix, prefix_buf, sizeof(prefix_buf));
+    // write_cmd NN is discarded; derived = wid_len-2 + value.size().
+    prefix_buf[3] = static_cast<uint8_t>(prefix_len - 2);
+    auto expected = ebus::makeSequence(ebus::ByteView(prefix_buf, prefix_len));
     expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
     REQUIRE(frame == expected);
   }
 }
 
-TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
-  const std::string json = R"({
-  "key": "badwrite",
-  "name": "Bad",
+TEST_CASE("Structurally malformed weishaupt writes are rejected", "[Command]") {
+  // NN is always derived now; rejection comes from structural checks
+  // (PB/SB, wid length, value length), not from a captured NN byte.
+  const char* bad_hex[] = {"70ff2309000500",     // PB != 0x50
+                           "7050ff09000500",     // SB != 0x23
+                           "705023090005",       // wid shorter than 5 bytes
+                           "7050230900050000"};  // wid longer than 5 bytes
+  for (auto hex : bad_hex) {
+    std::string json =
+        std::string(
+            R"({"key":"badwrite","name":"Bad","read_cmd":"085003019e","write_cmd":")") +
+        hex +
+        R"(","write_type":"weishaupt","interval":60,"master":false,)"
+        R"("fields":[{"name":"value","profile":"uint16","position":1}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+    const uint8_t value[] = {0xaa, 0x00};
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+                .empty());
+    REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
+                .empty());
+  }
+
+  // Well-formed structure: 2-byte value builds the 13-byte frame,
+  // any other value length is rejected.
+  const std::string fixed_json = R"({
+  "key": "goodwrite",
+  "name": "Good",
   "read_cmd": "085003019e",
-  "write_cmd": "70502308ab0500",
+  "write_cmd": "70502309000500",
   "write_type": "weishaupt",
   "fields": [
     {
@@ -374,19 +508,15 @@ TEST_CASE("Malformed opted-in writes are rejected", "[Command]") {
     }
   ]
 })";
-  JsonReader reader(json);
-  Command cmd = Command::fromJson(reader);
+  JsonReader fixed_reader(fixed_json);
+  Command fixed_cmd = Command::fromJson(fixed_reader);
   const uint8_t value[] = {0xaa, 0x00};
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
-              .empty());
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
-              .empty());
-  const uint8_t valid_prefix[] = {0x70, 0x50, 0x23, 9, 0, 5, 0};
-  PollSequence prefix;
-  prefix.assign(ebus::ByteView(valid_prefix, 7));
-  cmd.setWriteCmd(std::move(prefix), command_manager);
-  REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
-              .empty());
+  REQUIRE(
+      fixed_cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
+          .size() == 13);
+  REQUIRE(
+      fixed_cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 1))
+          .empty());
 }
 
 TEST_CASE("Write types reject unknown names and non-strings", "[Command]") {
@@ -410,7 +540,8 @@ TEST_CASE("Write types reject unknown names and non-strings", "[Command]") {
   }
 }
 
-TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
+TEST_CASE("Explicit simple writes derive NN and preserve data bytes",
+          "[Command]") {
   const std::string json = R"({
   "key": "simple_type",
   "name": "Simple",
@@ -431,10 +562,129 @@ TEST_CASE("Explicit simple writes preserve the existing bytes", "[Command]") {
   Command cmd = Command::fromJson(reader);
   REQUIRE(cmd.getWriteType() == command_types::WriteType::simple);
   const uint8_t value[] = {0xaa, 0};
-  auto expected = ebus::makeSequence(cmd.getWriteCmd(command_manager));
+  // NN byte (09) is discarded: derived = wid_len-2 + 2 = 05; the D tail
+  // (ab 05 00) is preserved byte-exact.
+  const uint8_t prefix_bytes[] = {0x70, 0x50, 0x23, 0x05, 0xab, 0x05, 0x00};
+  auto expected =
+      ebus::makeSequence(ebus::ByteView(prefix_bytes, sizeof(prefix_bytes)));
   expected.append(ebus::makeSequence(ebus::ByteView(value, 2)));
   REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2)) ==
           expected);
+}
+
+TEST_CASE("Command multi-field object write encodes every field", "[Command]") {
+  const std::string json = R"({
+  "key": "mf",
+  "name": "MF",
+  "zz": "50",
+  "pbsb": "0301",
+  "wpbsb": "b509",
+  "wdx": "0400",
+  "interval": 0,
+  "master": false,
+  "fields": [
+    {"name": "a", "profile": "uint8", "position": 1, "ha_profile": ""},
+    {"name": "b", "profile": "uint16", "position": 2, "ha_profile": ""}
+  ]
+})";
+  JsonReader validation(json);
+  REQUIRE(Command::evaluate(validation).empty());
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+  REQUIRE(cmd.getFieldCount() == 2);
+
+  // Keys may arrive in any order; bytes follow position order. eBUS
+  // multi-byte integers are little-endian: 258 = 0x0102 -> 02 01.
+  auto v = cmd.getVectorFromValue(R"({"b":258,"a":7})");
+  REQUIRE(v.size() == 3);
+  REQUIRE(v[0] == 0x07);
+  REQUIRE(v[1] == 0x02);
+  REQUIRE(v[2] == 0x01);
+
+  // Incomplete payload: rejected whole, never partially encoded.
+  REQUIRE(cmd.getVectorFromValue(R"({"a":7})").empty());
+  // Unknown key: rejected.
+  REQUIRE(cmd.getVectorFromValue(R"({"a":7,"b":1,"zz":9})").empty());
+  // Scalar on a multi-field command: rejected (would truncate the wire
+  // payload to field 0).
+  REQUIRE(cmd.getVectorFromValue("7").empty());
+  // Duplicate key: rejected.
+  REQUIRE(cmd.getVectorFromValue(R"({"a":7,"a":9,"b":1})").empty());
+  // Bad value for a field: rejected.
+  REQUIRE(cmd.getVectorFromValue(R"({"a":7,"b":"nope"})").empty());
+  REQUIRE(cmd.getVectorFromValue(R"({"a":7,"b":null})").empty());
+}
+
+TEST_CASE("Command multi-field write auto-pads ign fillers", "[Command]") {
+  const std::string json = R"({
+  "key": "ignmf",
+  "name": "IgnMF",
+  "zz": "50",
+  "pbsb": "0301",
+  "wpbsb": "b509",
+  "wdx": "0400",
+  "interval": 0,
+  "master": false,
+  "fields": [
+    {"name": "value", "profile": "uint8", "position": 1, "ha_profile": ""},
+    {"name": "ign", "profile": "char1", "position": 2, "ha_profile": ""},
+    {"name": "ign_1", "profile": "char1", "position": 3, "ha_profile": ""},
+    {"name": "tail", "profile": "uint8", "position": 4, "ha_profile": ""}
+  ]
+})";
+  JsonReader validation(json);
+  REQUIRE(Command::evaluate(validation).empty());
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  // ign / ign_* are omitted by the client and padded with zero bytes of
+  // the datatype width (char1 filler -> 0x00), keeping positions right.
+  auto v = cmd.getVectorFromValue(R"({"value":5,"tail":9})");
+  REQUIRE(v.size() == 4);
+  REQUIRE(v[0] == 5);
+  REQUIRE(v[1] == 0);
+  REQUIRE(v[2] == 0);
+  REQUIRE(v[3] == 9);
+
+  // Explicit filler values are honoured when provided (char1 takes the
+  // character itself, not a number).
+  auto v2 =
+      cmd.getVectorFromValue(R"({"value":5,"ign":"A","ign_1":"B","tail":9})");
+  REQUIRE(v2.size() == 4);
+  REQUIRE(v2[1] == 'A');
+  REQUIRE(v2[2] == 'B');
+
+  // Missing non-filler field still rejects.
+  REQUIRE(cmd.getVectorFromValue(R"({"value":5})").empty());
+}
+
+TEST_CASE("Command single-field accepts scalar and object forms", "[Command]") {
+  const std::string json = R"({
+  "key": "sf",
+  "name": "SF",
+  "zz": "50",
+  "pbsb": "0301",
+  "wpbsb": "b509",
+  "wdx": "0400",
+  "interval": 0,
+  "master": false,
+  "fields": [
+    {"name": "value", "profile": "uint8", "position": 1, "ha_profile": ""}
+  ]
+})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  auto scalar = cmd.getVectorFromValue("5");
+  REQUIRE(scalar.size() == 1);
+  REQUIRE(scalar[0] == 5);
+
+  auto object = cmd.getVectorFromValue(R"({"value":6})");
+  REQUIRE(object.size() == 1);
+  REQUIRE(object[0] == 6);
+
+  // Unknown key in the object form still rejects.
+  REQUIRE(cmd.getVectorFromValue(R"({"other":6})").empty());
 }
 
 TEST_CASE("Tabular write types reject boolean and unknown values",
@@ -446,10 +696,292 @@ TEST_CASE("Tabular write types reject boolean and unknown values",
             R"(["tab_type","Type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],)") +
         type + "]";
     JsonReader reader(row);
-    Command cmd = Command::fromTabular(reader);
+    Command cmd = Command::fromTabular(reader, true);
     REQUIRE(cmd.getWriteType() == command_types::WriteType::invalid);
     const uint8_t value[] = {0xd2, 0};
     REQUIRE(cmd.buildWriteSequence(command_manager, ebus::ByteView(value, 2))
                 .empty());
+  }
+}
+
+TEST_CASE("Command compact schema derives read NN", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"b516","dx":"01",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasNnOverride() == false);
+  REQUIRE(cmd.hasWriteCmd() == false);
+
+  uint8_t buf[10];
+  size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 5);
+  REQUIRE(buf[0] == 0xfe);
+  REQUIRE(buf[1] == 0xb5);
+  REQUIRE(buf[2] == 0x16);
+  REQUIRE(buf[3] == 0x01);  // derived NN = len(id)-2
+  REQUIRE(buf[4] == 0x01);
+}
+
+TEST_CASE("Command explicit nn overrides derived NN", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"b516","dx":"01","nn":"03",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasNnOverride() == true);
+  REQUIRE(cmd.getNn().size() == 1);
+  REQUIRE(cmd.getNn()[0] == 0x03);
+
+  uint8_t buf[10];
+  size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 5);
+  REQUIRE(buf[3] == 0x03);
+  REQUIRE(buf[4] == 0x01);
+}
+
+TEST_CASE("Command buildWriteCmd derives NN from value", "[Command]") {
+  std::string json =
+      R"({"key":"32","name":"W","zz":"50","wpbsb":"b509","wdx":"0e3300",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"v","profile":"data1c_celsius","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasWriteCmd() == true);
+
+  uint8_t vb[] = {0xaa};
+  ebus::Sequence seq = cmd.buildWriteCmd(ebus::ByteView(vb, 1));
+  REQUIRE(seq.size() == 8);
+  const uint8_t expect[] = {0x50, 0xb5, 0x09, 0x04, 0x0e, 0x33, 0x00, 0xaa};
+  for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(seq[i] == expect[i]);
+}
+
+TEST_CASE("Command buildWriteCmd is empty for read-only command", "[Command]") {
+  std::string json = R"({"key":"01","name":"T","zz":"fe","pbsb":"0700",)"
+                     R"("interval":0,"master":true,)"
+                     R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+                     R"("ha_profile":""}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasWriteCmd() == false);
+  uint8_t vb[] = {0xaa};
+  REQUIRE(cmd.buildWriteCmd(ebus::ByteView(vb, 1)).empty());
+}
+
+TEST_CASE("Command legacy read_cmd round-trips byte-exact", "[Command]") {
+  SECTION("Derivable NN matches stored NN") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"50b504020d00",)"
+        R"("interval":0,"master":false,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    REQUIRE(cmd.hasNnOverride() == false);
+    uint8_t buf[10];
+    size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+    REQUIRE(len == 6);
+    const uint8_t expect[] = {0x50, 0xb5, 0x04, 0x02, 0x0d, 0x00};
+    for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(buf[i] == expect[i]);
+  }
+
+  SECTION("Divergent NN becomes explicit override") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"feb5160301",)"
+        R"("interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    REQUIRE(cmd.hasNnOverride() == true);
+    uint8_t buf[10];
+    size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+    REQUIRE(len == 5);
+    const uint8_t expect[] = {0xfe, 0xb5, 0x16, 0x03, 0x01};
+    for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(buf[i] == expect[i]);
+  }
+
+  SECTION("No-tail read keeps original NN") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"fe070009",)"
+        R"("interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"data2b_celsius","position":1,)"
+        R"("ha_profile":"sensor_temperature"}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    REQUIRE(cmd.getId().size() == 2);
+    REQUIRE(cmd.hasNnOverride() == true);
+    uint8_t buf[10];
+    size_t len = cmd.buildReadCmd(buf, sizeof(buf));
+    REQUIRE(len == 4);
+    const uint8_t expect[] = {0xfe, 0x07, 0x00, 0x09};
+    for (size_t i = 0; i < sizeof(expect); i++) REQUIRE(buf[i] == expect[i]);
+  }
+}
+
+TEST_CASE("Command matches requires id and exact bytes", "[Command]") {
+  SECTION("Idless command never matches") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    uint8_t bytes[] = {0x10, 0xfe, 0x07, 0x00, 0x09};
+    REQUIRE(cmd.matches(ebus::ByteView(bytes, sizeof(bytes))) == false);
+  }
+
+  SECTION("Exact match including NN byte") {
+    std::string json =
+        R"({"key":"01","name":"T","read_cmd":"feb5160301",)"
+        R"("interval":0,"master":true,)"
+        R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+        R"("ha_profile":""}]})";
+    JsonReader reader(json);
+    Command cmd = Command::fromJson(reader);
+
+    uint8_t hit[] = {0x00, 0xfe, 0xb5, 0x16, 0x03, 0x01};
+    REQUIRE(cmd.matches(ebus::ByteView(hit, sizeof(hit))) == true);
+
+    uint8_t miss[] = {0x00, 0xfe, 0xb5, 0x16, 0x04, 0x01};
+    REQUIRE(cmd.matches(ebus::ByteView(miss, sizeof(miss))) == false);
+  }
+}
+
+TEST_CASE("Command evaluate accepts split schema", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","wpbsb":"0700","wdx":"0e",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"data2b_celsius","position":1,)"
+      R"("ha_profile":"sensor_temperature"}]})";
+  JsonReader reader(json);
+  REQUIRE(Command::evaluate(reader).empty());
+
+  std::string no_zz =
+      R"({"key":"01","name":"T","pbsb":"0700","interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader r2(no_zz);
+  std::string_view error = Command::evaluate(r2);
+  REQUIRE_FALSE(error.empty());
+  REQUIRE(error.find("zz") != std::string_view::npos);
+}
+
+TEST_CASE("Command evaluate rejects retired id/wid keys", "[Command]") {
+  const char* fixtures[] = {
+      R"({"key":"01","name":"T","zz":"fe","id":"0700","interval":0,)"
+      R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+      R"("position":1,"ha_profile":""}]})",
+      R"({"key":"01","name":"T","zz":"fe","wid":"07000e","interval":0,)"
+      R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+      R"("position":1,"ha_profile":""}]})",
+  };
+  for (const char* json : fixtures) {
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+    REQUIRE(error.find("Unsupported key") != std::string_view::npos);
+  }
+  // dx/wdx without their PBSB half is rejected too.
+  std::string orphan_dx =
+      R"({"key":"01","name":"T","zz":"fe","pbsb":"","dx":"0d3300",)"
+      R"("interval":0,"master":true,)"
+      R"("fields":[{"name":"v","profile":"uint8","position":1,)"
+      R"("ha_profile":""}]})";
+  JsonReader reader(orphan_dx);
+  std::string_view error = Command::evaluate(reader);
+  REQUIRE_FALSE(error.empty());
+  REQUIRE(error.find("dx") != std::string_view::npos);
+}
+
+TEST_CASE("Command bits map parses and expands payload per bit", "[Command]") {
+  std::string json =
+      R"({"key":"01","name":"HCMODE","read_cmd":"b5090103","master":false,)"
+      R"("fields":[{"name":"hcmode","profile":"uint8","position":1,)"
+      R"("ha_profile":"binary_sensor","bits":{"bi":0,"bi_1":1,"bi_2":2}}]})";
+  JsonReader reader(json);
+  Command cmd = Command::fromJson(reader);
+
+  REQUIRE(cmd.hasFieldBits(0));
+  REQUIRE(cmd.getFieldBitCount(0) == 3);
+  REQUIRE(cmd.getFieldBitName(0, 0) == "bi");
+  REQUIRE(cmd.getFieldBitName(0, 1) == "bi_1");
+  REQUIRE(cmd.getFieldBitName(0, 2) == "bi_2");
+
+  ebus::Sequence data;
+  data.push_back(0x05);  // bits 0 and 2 set
+  cmd.setData(ebus::ByteView(data));
+
+  std::string out;
+  ebus::detail::JsonWriter writer([&out](std::string_view s) { out += s; });
+  {
+    auto scope = writer.objectScope();
+    cmd.writeValuePayload(writer);
+  }
+
+  // One key per bit, no whole-byte key.
+  REQUIRE(out.find("\"bi\":1") != std::string::npos);
+  REQUIRE(out.find("\"bi_1\":0") != std::string::npos);
+  REQUIRE(out.find("\"bi_2\":1") != std::string::npos);
+  REQUIRE(out.find("\"hcmode\"") == std::string::npos);
+  REQUIRE(out.find("\"value\"") == std::string::npos);
+
+  // getValueJson expands too (single-field bits is never a bare scalar).
+  std::string value_out;
+  ebus::detail::JsonWriter vwriter(
+      [&value_out](std::string_view s) { value_out += s; });
+  cmd.getValueJson(vwriter);
+  REQUIRE(value_out.find("\"bi\":1") != std::string::npos);
+}
+
+TEST_CASE("Command evaluate rejects malformed bits maps", "[Command]") {
+  SECTION("Non-object bits") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","interval":0,)"
+        R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+        R"("position":1,"ha_profile":"binary_sensor","bits":"nope"}]})";
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+    REQUIRE(error.find("bits") != std::string_view::npos);
+  }
+
+  SECTION("Non-dense bit indices") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","interval":0,)"
+        R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+        R"("position":1,"ha_profile":"binary_sensor",)"
+        R"("bits":{"bi":0,"bi_2":2}}]})";
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
+  }
+
+  SECTION("More than 8 bits") {
+    std::string json =
+        R"({"key":"01","name":"T","zz":"fe","pbsb":"0700","interval":0,)"
+        R"("master":true,"fields":[{"name":"v","profile":"uint8",)"
+        R"("position":1,"ha_profile":"binary_sensor","bits":{)";
+    for (int i = 0; i < 9; ++i) {
+      if (i) json += ",";
+      json += "\"b" + std::to_string(i) + "\":" + std::to_string(i);
+    }
+    json += "}}]}";
+    JsonReader reader(json);
+    std::string_view error = Command::evaluate(reader);
+    REQUIRE_FALSE(error.empty());
   }
 }

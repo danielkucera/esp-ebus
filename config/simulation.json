@@ -2,8 +2,10 @@
  {
   "key": "01",
   "name": "Outside_Temperature",
-  "read_cmd": "feb5160301",
-  "write_cmd": "",
+  "zz": "fe",
+  "pbsb": "b516",
+  "dx": "01",
+  "nn": "03",
   "interval": 0,
   "master": true,
   "fields": [
@@ -18,8 +20,9 @@
  {
   "key": "09",
   "name": "Buffer/Middle_Temperature",
-  "read_cmd": "08b50903290100",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "290100",
   "interval": 0,
   "master": false,
   "fields": [
@@ -40,8 +43,9 @@
  {
   "key": "10",
   "name": "Buffer/Bottom_Temperature",
-  "read_cmd": "08b50903290700",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "290700",
   "interval": 60,
   "master": false,
   "fields": [
@@ -62,8 +66,9 @@
  {
   "key": "11",
   "name": "Brine/Inlet_Temperature",
-  "read_cmd": "08b50903290f00",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "290f00",
   "interval": 0,
   "master": false,
   "fields": [
@@ -84,8 +89,9 @@
  {
   "key": "12",
   "name": "Brine/Outlet_Temperature",
-  "read_cmd": "08b509030d0800",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "0d0800",
   "interval": 60,
   "master": false,
   "fields": [
@@ -106,8 +112,9 @@
  {
   "key": "13",
   "name": "Brine/Pressure",
-  "read_cmd": "08b509030d1600",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "0d1600",
   "interval": 60,
   "master": false,
   "fields": [
@@ -128,8 +135,9 @@
  {
   "key": "34",
   "name": "Heatpump/Compressor",
-  "read_cmd": "08b509030d1d00",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "0d1d00",
   "interval": 60,
   "master": false,
   "fields": [
@@ -144,8 +152,9 @@
  {
   "key": "48",
   "name": "MF/Status",
-  "read_cmd": "08b511020300",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b511",
+  "dx": "0300",
   "interval": 0,
   "master": false,
   "fields": [
@@ -178,8 +187,9 @@
  {
   "key": "97",
   "name": "Probe/NoAnswer",
-  "read_cmd": "08b50902e400",
-  "write_cmd": "",
+  "zz": "08",
+  "pbsb": "b509",
+  "dx": "e400",
   "interval": 10,
   "master": false,
   "fields": [

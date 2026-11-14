@@ -114,8 +114,7 @@ TEST_CASE("MqttHA publishes sensor discovery config", "[mqttha]") {
   REQUIRE(payloadContains(msg, R"("value_template":"{{value_json.value}}")"));
 }
 
-TEST_CASE("MqttHA multi-field discovery follows the payload mode",
-          "[mqttha]") {
+TEST_CASE("MqttHA multi-field discovery follows the payload mode", "[mqttha]") {
   Recorder recorder;
   registerMultiTempCommand();
   MqttHA ha = makeHa(recorder);
@@ -235,4 +234,96 @@ TEST_CASE("MqttHA without transport drops silently", "[mqttha]") {
   ha.publishComponent(cmd, 0, false);
   ha.publishDeviceInfo();
   SUCCEED();
+}
+
+namespace {
+
+void registerBitsCommand() {
+  command_manager.wipeCommands();
+  std::string json =
+      R"({"key":"03","name":"HCMODE","read_cmd":"b5090103",)"
+      R"("write_cmd":"","interval":0,"master":false,)"
+      R"("fields":[{"name":"hcmode","profile":"uint8","position":1,)"
+      R"("ha_profile":"binary_sensor","bits":{"bi":0,"bi_1":1}}]})";
+  ebus::detail::JsonReader reader(json);
+  command_manager.insertCommand(Command::fromJson(reader));
+}
+
+void registerWeekdayCommand() {
+  command_manager.wipeCommands();
+  std::string json =
+      R"({"key":"04","name":"Weekday","read_cmd":"b5090109",)"
+      R"("write_cmd":"","interval":0,"master":false,)"
+      R"("fields":[{"name":"day","profile":"uint8","position":1,)"
+      R"("ha_profile":"select_enum_weekday_mon0"}]})";
+  ebus::detail::JsonReader reader(json);
+  command_manager.insertCommand(Command::fromJson(reader));
+}
+
+}  // namespace
+
+TEST_CASE("MqttHA publishes one binary_sensor per bit", "[mqttha]") {
+  Recorder recorder;
+  registerBitsCommand();
+  MqttHA ha = makeHa(recorder);
+  ha.setPayloadMode(MqttPayloadMode::json_singlevalue);
+
+  const Command* cmd = command_manager.findCommand("03");
+  REQUIRE(cmd != nullptr);
+  ha.publishComponent(cmd, 0, false);
+
+  REQUIRE(recorder.messages.size() == 2);
+
+  const PublishedMessage& bi = recorder.messages[0];
+  REQUIRE(bi.topic ==
+          "homeassistant/binary_sensor/ebus820b80/03_hcmode_bi/config");
+  REQUIRE(payloadContains(bi, R"("unique_id":"ebus820b80_03_0_0")"));
+  REQUIRE(payloadContains(bi, R"("value_template":"{{value_json.value}}")"));
+  REQUIRE(payloadContains(bi, R"("payload_on":"1")"));
+  REQUIRE(payloadContains(bi, R"("payload_off":"0")"));
+  REQUIRE(payloadContains(bi, R"(values/bi)"));
+
+  const PublishedMessage& bi1 = recorder.messages[1];
+  REQUIRE(bi1.topic ==
+          "homeassistant/binary_sensor/ebus820b80/03_hcmode_bi_1/config");
+  REQUIRE(payloadContains(bi1, R"("unique_id":"ebus820b80_03_0_1")"));
+  REQUIRE(payloadContains(bi1, R"(values/bi_1)"));
+}
+
+TEST_CASE("MqttHA remove clears every bit entity", "[mqttha]") {
+  Recorder recorder;
+  registerBitsCommand();
+  MqttHA ha = makeHa(recorder);
+
+  const Command* cmd = command_manager.findCommand("03");
+  REQUIRE(cmd != nullptr);
+  ha.publishComponent(cmd, 0, true);
+
+  REQUIRE(recorder.messages.size() == 2);
+  REQUIRE(recorder.messages[0].topic ==
+          "homeassistant/binary_sensor/ebus820b80/03_hcmode_bi/config");
+  REQUIRE(recorder.messages[0].payload.empty());
+  REQUIRE(recorder.messages[1].topic ==
+          "homeassistant/binary_sensor/ebus820b80/03_hcmode_bi_1/config");
+  REQUIRE(recorder.messages[1].payload.empty());
+}
+
+TEST_CASE("MqttHA weekday select publishes all seven BDY options", "[mqttha]") {
+  Recorder recorder;
+  registerWeekdayCommand();
+  MqttHA ha = makeHa(recorder);
+
+  const Command* cmd = command_manager.findCommand("04");
+  REQUIRE(cmd != nullptr);
+  ha.publishComponent(cmd, 0, false);
+
+  REQUIRE(recorder.messages.size() == 1);
+  const PublishedMessage& msg = recorder.messages[0];
+  REQUIRE(msg.topic == "homeassistant/select/ebus820b80/04_weekday_day/config");
+  // Seven Mon–Sun options: the 8-slot option buffers must not truncate.
+  REQUIRE(payloadContains(
+      msg, R"("options":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"])"));
+  REQUIRE(payloadContains(
+      msg, R"(0:'Mon',1:'Tue',2:'Wed',3:'Thu',4:'Fri',5:'Sat',6:'Sun')"));
+  REQUIRE(payloadContains(msg, R"('Mon':0,'Tue':1)"));
 }

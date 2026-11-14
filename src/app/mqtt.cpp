@@ -713,26 +713,7 @@ void Mqtt::handleWrite(std::string_view payload) {
       return;
     }
 
-    ebus::Sequence value_bytes;
-    auto field_dt = command->getFieldDatatype(0);
-    if (ebus::isNumeric(field_dt)) {
-      // Strict parse (see command.cpp): garbage must not become 0.
-      auto parsed = ebus::toNumStrict<double>(val_view);
-      if (parsed) {
-        double val = *parsed;
-        if ((val >= command->getFieldMin(0)) &&
-            (val <= command->getFieldMax(0))) {
-          value_bytes = command->getVectorFromDouble(val, 0);
-        }
-      }
-    } else {
-      if (val_view.size() >= 2 && val_view.front() == '"' &&
-          val_view.back() == '"') {
-        val_view.remove_prefix(1);
-        val_view.remove_suffix(1);
-      }
-      value_bytes = command->getVectorFromString(val_view, 0);
-    }
+    ebus::Sequence value_bytes = command->getVectorFromValue(val_view);
 
     if (!value_bytes.empty()) {
       ebus::Sequence full_write =
@@ -789,26 +770,10 @@ void Mqtt::handleDirectWrite(std::string_view key, std::string_view val_view) {
   Command* command = command_manager.findCommand(key);
   if (command == nullptr) return;
 
-  ebus::Sequence value_bytes;
-  auto field_dt = command->getFieldDatatype(0);
-  if (ebus::isNumeric(field_dt)) {
-    // Strict parse (see command.cpp): garbage must not become 0.
-    auto parsed = ebus::toNumStrict<double>(val_view);
-    if (parsed) {
-      double val = *parsed;
-      if ((val >= command->getFieldMin(0)) &&
-          (val <= command->getFieldMax(0))) {
-        value_bytes = command->getVectorFromDouble(val, 0);
-      }
-    }
-  } else {
-    if (val_view.size() >= 2 && val_view.front() == '"' &&
-        val_view.back() == '"') {
-      val_view.remove_prefix(1);
-      val_view.remove_suffix(1);
-    }
-    value_bytes = command->getVectorFromString(val_view, 0);
-  }
+  // Scalar for single-field commands, {"field":value,...} object for
+  // multi-field ones - getVectorFromValue routes and rejects incomplete
+  // payloads before anything reaches the bus.
+  ebus::Sequence value_bytes = command->getVectorFromValue(val_view);
 
   if (!value_bytes.empty()) {
     ebus::Sequence full_write =
@@ -854,7 +819,11 @@ void Mqtt::handleValueUpdate(std::string_view key) {
   };
 
   const size_t field_count = cmd->getFieldCount();
-  if (field_count <= 1 || payload_mode_ == MqttPayloadMode::json_multivalue) {
+  // A bits field must not be swallowed by the single-topic shortcut: it
+  // expands to one topic per bit (json_single / plain) instead.
+  const bool field0_bits = field_count > 0 && cmd->hasFieldBits(0);
+  if ((field_count <= 1 && !field0_bits) ||
+      payload_mode_ == MqttPayloadMode::json_multivalue) {
     char topic_buf[128];
     int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s",
                      (int)cmd->getName().size(), cmd->getName().data());
@@ -875,8 +844,40 @@ void Mqtt::handleValueUpdate(std::string_view key) {
     return;
   }
 
-  // One topic per field: values/<field>
+  // One topic per field (or per bit for bits fields): values/<field|bit>
   for (size_t i = 0; i < field_count; ++i) {
+    if (cmd->hasFieldBits(i)) {
+      const size_t bit_count = cmd->getFieldBitCount(i);
+      uint8_t byte = 0;
+      const bool byte_ok = cmd->getFieldByteValue(i, byte);
+      for (size_t b = 0; b < bit_count; ++b) {
+        const std::string_view bit_name = cmd->getFieldBitName(i, b);
+        if (bit_name.empty()) continue;
+        char topic_buf[128];
+        int n = snprintf(topic_buf, sizeof(topic_buf), "values/%.*s",
+                         (int)bit_name.size(), bit_name.data());
+        if (n <= 0 || (size_t)n >= sizeof(topic_buf)) continue;
+        lowerTopic(topic_buf, n);
+        const uint32_t bit_val = byte_ok ? ((byte >> b) & 1u) : 0;
+        if (payload_mode_ == MqttPayloadMode::plain) {
+          char plain_buf[8];
+          snprintf(plain_buf, sizeof(plain_buf), "%u",
+                   static_cast<unsigned>(bit_val));
+          publishStream(
+              topic_buf, 0, false,
+              [plain_buf](const ebus::JsonChunkVisitor& v) { v(plain_buf); });
+        } else {
+          publishStream(topic_buf, 0, false,
+                        [bit_val](const ebus::JsonChunkVisitor& v) {
+                          ebus::detail::JsonWriter writer(v);
+                          auto scope = writer.objectScope();
+                          writer.writeField("value", bit_val);
+                        });
+        }
+      }
+      continue;
+    }
+
     const char* field_name = cmd->getFieldName(i);
     if (!field_name || !field_name[0]) field_name = "value";
 

@@ -24,6 +24,8 @@ curl -X POST \
 
 ## Command set upload
 
+Command JSON schema: [`doc/command-schema.md`](command-schema.md).
+
 ```bash
 # Command set upload (commands.json below is just an example — use your own)
 curl -X POST \
@@ -55,13 +57,22 @@ curl -X POST \
 
 ## Write a value (POST, JSON)
 
-Payload shape depends on the command — verify against one writable
-command before use. Schematic example:
+Scalar `value` for single-field commands, object `value` for
+multi-field ones (all non-`ign` fields required; `ign`/`ign_*` fillers
+auto-pad with 0). Full rules: [`doc/api.md`](api.md). Command schema:
+[`doc/command-schema.md`](command-schema.md).
 
 ```bash
+# single-field
 curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"key":"42","value":55}' \
+  http://<device-ip>/api/v1/app/values/write
+
+# multi-field — one-shot full payload, never a partial update
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"key":"42","value":{"value":55}}' \
   http://<device-ip>/api/v1/app/values/write
 ```
 

@@ -133,3 +133,51 @@ TEST_CASE("ValuesApi rejects malformed and invalid writes", "[values_api]") {
 
   command_manager.wipeCommands();
 }
+
+TEST_CASE("ValuesApi writes multi-field commands with a value object",
+          "[values_api]") {
+  command_manager.wipeCommands();
+  const std::string command_json = R"({
+    "key": "mf",
+    "name": "MultiField",
+    "zz": "50",
+    "id": "0301",
+    "wid": "b5090400",
+    "interval": 60,
+    "master": false,
+    "fields": [
+      {"name": "a", "profile": "uint8", "position": 1, "ha_profile": ""},
+      {"name": "b", "profile": "uint16", "position": 2, "ha_profile": ""}
+    ]
+  })";
+  ebus::detail::JsonReader reader(command_json);
+  command_manager.insertCommand(Command::fromJson(reader));
+  REQUIRE(command_manager.findCommand("mf") != nullptr);
+  ValuesApi api(command_manager);
+
+  httpd_req_t ok_req{};
+  ok_req.body = R"({"key":"mf","value":{"b":258,"a":7}})";
+  ok_req.content_len = static_cast<int>(ok_req.body.size());
+  REQUIRE(ValuesApi::handleValuesWrite(&ok_req) == ESP_OK);
+  REQUIRE(ok_req.status == "200 OK");
+  REQUIRE(ok_req.final_body.find(R"("status":"successful")") !=
+          std::string::npos);
+
+  // Incomplete object: rejected at the request level, nothing enqueued.
+  httpd_req_t incomplete_req{};
+  incomplete_req.body = R"({"key":"mf","value":{"a":7}})";
+  incomplete_req.content_len = static_cast<int>(incomplete_req.body.size());
+  REQUIRE(ValuesApi::handleValuesWrite(&incomplete_req) == ESP_OK);
+  REQUIRE(incomplete_req.status == "400 Bad Request");
+  REQUIRE(incomplete_req.final_body.find("Invalid value for key 'mf'") !=
+          std::string::npos);
+
+  // Scalar on a multi-field command: rejected (would truncate to field 0).
+  httpd_req_t scalar_req{};
+  scalar_req.body = R"({"key":"mf","value":7})";
+  scalar_req.content_len = static_cast<int>(scalar_req.body.size());
+  REQUIRE(ValuesApi::handleValuesWrite(&scalar_req) == ESP_OK);
+  REQUIRE(scalar_req.status == "400 Bad Request");
+
+  command_manager.wipeCommands();
+}

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <unistd.h>
+
 #include <catch2/catch_all.hpp>
 #include <cmath>
 #include <cstdio>
@@ -505,6 +507,178 @@ TEST_CASE("Unsupported tabular write types are not registered",
   const std::string row =
       R"(["invalid_type","Invalid write type","75502203700500","70502309000500",60,false,[{"name":"value","profile":"uint16","position":1}],true])";
   JsonReader reader(row);
-  command_manager.insertCommand(Command::fromTabular(reader));
+  command_manager.insertCommand(Command::fromTabular(reader, true));
   REQUIRE(command_manager.getCommandCount() == 0);
+}
+
+TEST_CASE("CommandManager saveCommands round-trips compact schema",
+          "[CommandManager]") {
+  command_manager.wipeCommands();
+
+  const char* json =
+      R"([{"key":"01","name":"Derived","read_cmd":"50b504020d00","write_cmd":"","interval":60,"master":false)"
+      R"(,"fields":[{"name":"value","profile":"uint8","position":1,"ha_profile":""}]},)"
+      R"({"key":"02","name":"Override","read_cmd":"feb5160301","write_cmd":"","interval":0,"master":true)"
+      R"(,"fields":[{"name":"value","profile":"uint8","position":1,"ha_profile":""}]},)"
+      R"({"key":"32","name":"Writer","read_cmd":"50b509030d3300","write_cmd":"50b509040e3300","interval":60,"master":false)"
+      R"(,"fields":[{"name":"value","profile":"data1c_celsius","position":1,"ha_profile":""}]}])";
+
+  const char* tmp_path = "/tmp/test_save_roundtrip.json";
+  FILE* f = std::fopen(tmp_path, "wb");
+  REQUIRE(f != nullptr);
+  std::fwrite(json, 1, std::strlen(json), f);
+  std::fclose(f);
+
+  REQUIRE(command_manager.loadCommandsFrom(tmp_path) >= 0);
+  REQUIRE(command_manager.getCommandCount() == 3);
+
+  // fetchCommands emits the split object schema
+  std::string fetched;
+  command_manager.fetchCommands(
+      [&fetched](std::string_view s) { fetched += s; });
+  REQUIRE(fetched.find("\"read_cmd\"") == std::string::npos);
+  REQUIRE(fetched.find("\"write_cmd\"") == std::string::npos);
+  REQUIRE(fetched.find("\"id\"") == std::string::npos);
+  REQUIRE(fetched.find("\"wid\"") == std::string::npos);
+  REQUIRE(fetched.find("\"pbsb\"") != std::string::npos);
+  REQUIRE(fetched.find("\"zz\"") != std::string::npos);
+  REQUIRE(fetched.find("\"nn\"") != std::string::npos);  // key 02 override
+  size_t wpbsb_count = 0;
+  for (size_t pos = fetched.find("\"wpbsb\""); pos != std::string::npos;
+       pos = fetched.find("\"wpbsb\"", pos + 1))
+    wpbsb_count++;
+  REQUIRE(wpbsb_count == 1);  // only key 32 is writable
+
+  // Persist compact and reload through the header-based schema detector.
+  // removeAll() clears memory only; wipeCommands() also deletes the file.
+  REQUIRE(command_manager.saveCommands() >= 0);
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() >= 0);
+  REQUIRE(command_manager.getCommandCount() == 3);
+
+  uint8_t buf[10];
+  Command* derived = command_manager.findCommand("01");
+  REQUIRE(derived != nullptr);
+  REQUIRE(derived->hasNnOverride() == false);
+  size_t len = derived->buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 6);
+  const uint8_t expect01[] = {0x50, 0xb5, 0x04, 0x02, 0x0d, 0x00};
+  for (size_t i = 0; i < sizeof(expect01); i++) REQUIRE(buf[i] == expect01[i]);
+
+  Command* ovr = command_manager.findCommand("02");
+  REQUIRE(ovr != nullptr);
+  REQUIRE(ovr->hasNnOverride() == true);
+  len = ovr->buildReadCmd(buf, sizeof(buf));
+  REQUIRE(len == 5);
+  const uint8_t expect02[] = {0xfe, 0xb5, 0x16, 0x03, 0x01};
+  for (size_t i = 0; i < sizeof(expect02); i++) REQUIRE(buf[i] == expect02[i]);
+
+  Command* writer = command_manager.findCommand("32");
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->hasWriteCmd() == true);
+  REQUIRE(writer->getWid().size() == 5);
+  uint8_t vb[] = {0xaa};
+  ebus::Sequence seq = writer->buildWriteCmd(ebus::ByteView(vb, 1));
+  REQUIRE(seq.size() == 8);
+  const uint8_t expect32[] = {0x50, 0xb5, 0x09, 0x04, 0x0e, 0x33, 0x00, 0xaa};
+  for (size_t i = 0; i < sizeof(expect32); i++) REQUIRE(seq[i] == expect32[i]);
+
+  command_manager.wipeCommands();
+  std::remove(tmp_path);
+}
+
+TEST_CASE("CommandManager loadCommands rewrites retired id/wid schema once",
+          "[CommandManager]") {
+  command_manager.wipeCommands();
+
+  char path[256];
+  std::snprintf(path, sizeof(path), "%s.%ld", EBUS_COMMANDS_FILE_PATH,
+                static_cast<long>(getpid()));
+
+  // Legacy pre-split object file placed at the boot path: the loader's
+  // legacy mode accepts id/wid, loadCommands() rewrites the file once.
+  const char* legacy =
+      R"([{"key":"01","name":"Old","zz":"fe","id":"0700","interval":0,"master":true)"
+      R"(,"fields":[{"name":"value","profile":"uint8","position":1,"ha_profile":""}]},)"
+      R"({"key":"32","name":"OldWriter","zz":"50","id":"b5090d3300","wid":"b5090e3300",)"
+      R"("interval":60,"master":false)"
+      R"(,"fields":[{"name":"value","profile":"data1c_celsius","position":1,"ha_profile":""}]}])";
+  FILE* f = std::fopen(path, "wb");
+  REQUIRE(f != nullptr);
+  std::fwrite(legacy, 1, std::strlen(legacy), f);
+  std::fclose(f);
+
+  REQUIRE(command_manager.loadCommands() > 0);
+  REQUIRE(command_manager.getCommandCount() == 2);
+
+  Command* writer = command_manager.findCommand("32");
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->getId().size() == 5);
+  REQUIRE(writer->getWid().size() == 5);
+
+  // The rewritten file carries only split-schema keys.
+  std::string saved;
+  f = std::fopen(path, "rb");
+  REQUIRE(f != nullptr);
+  char chunk[256];
+  size_t n;
+  while ((n = std::fread(chunk, 1, sizeof(chunk), f)) > 0)
+    saved.append(chunk, n);
+  std::fclose(f);
+  REQUIRE(saved.find("\"pbsb\"") != std::string::npos);
+  REQUIRE(saved.find("\"wpbsb\"") != std::string::npos);
+  REQUIRE(saved.find("\"id\"") == std::string::npos);
+  REQUIRE(saved.find("\"wid\"") == std::string::npos);
+
+  // Second boot reads the split schema directly.
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() > 0);
+  REQUIRE(command_manager.getCommandCount() == 2);
+  writer = command_manager.findCommand("32");
+  REQUIRE(writer != nullptr);
+  REQUIRE(writer->getWid().size() == 5);
+
+  command_manager.wipeCommands();
+}
+
+TEST_CASE("CommandManager saveCommands round-trips bits maps",
+          "[CommandManager]") {
+  command_manager.wipeCommands();
+
+  const char* json =
+      R"([{"key":"01","name":"HCMODE","read_cmd":"b509010301","write_cmd":"",)"
+      R"("interval":0,"master":false,)"
+      R"("fields":[{"name":"hcmode","profile":"uint8","position":1,)"
+      R"("ha_profile":"binary_sensor","bits":{"bi":0,"bi_1":1}}]}])";
+
+  const char* tmp_path = "/tmp/test_bits_roundtrip.json";
+  FILE* f = std::fopen(tmp_path, "wb");
+  REQUIRE(f != nullptr);
+  std::fwrite(json, 1, std::strlen(json), f);
+  std::fclose(f);
+
+  REQUIRE(command_manager.loadCommandsFrom(tmp_path) >= 0);
+  REQUIRE(command_manager.getCommandCount() == 1);
+  Command* cmd = command_manager.findCommand("01");
+  REQUIRE(cmd != nullptr);
+  REQUIRE(cmd->hasFieldBits(0));
+  REQUIRE(cmd->getFieldBitCount(0) == 2);
+
+  std::string fetched;
+  command_manager.fetchCommands(
+      [&fetched](std::string_view s) { fetched += s; });
+  REQUIRE(fetched.find("\"bits\"") != std::string::npos);
+  REQUIRE(fetched.find("\"bi_1\":1") != std::string::npos);
+
+  REQUIRE(command_manager.saveCommands() >= 0);
+  command_manager.removeAll();
+  REQUIRE(command_manager.loadCommands() >= 0);
+  Command* reloaded = command_manager.findCommand("01");
+  REQUIRE(reloaded != nullptr);
+  REQUIRE(reloaded->hasFieldBits(0));
+  REQUIRE(reloaded->getFieldBitCount(0) == 2);
+  REQUIRE(reloaded->getFieldBitName(0, 0) == "bi");
+  REQUIRE(reloaded->getFieldBitName(0, 1) == "bi_1");
+
+  command_manager.wipeCommands();
 }

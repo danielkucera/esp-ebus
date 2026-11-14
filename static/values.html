@@ -177,9 +177,30 @@
             btnEl.disabled = true;
             setStatus('Setting...');
             try {
-                const raw = inputEl.value;
-                const num = Number(raw);
-                const payload = (raw !== '' && isFinite(num)) ? { key: key, value: num } : { key: key, value: raw };
+                const prefix = key + '\x1f';
+                const rows = [...document.querySelectorAll('input[data-key]')].filter(
+                    el => !el.disabled && el.getAttribute('data-key').startsWith(prefix));
+                let payload;
+                if (rows.length > 1) {
+                    // Multi-field command: gather every editable field row
+                    // into one one-shot object (server rejects incomplete
+                    // payloads). Empty ign/ign_* rows are omitted so the
+                    // server auto-pads the wire fillers with 0; disabled
+                    // rows (read-only bits expansion) are skipped too.
+                    const value = {};
+                    for (const el of rows) {
+                        const field = el.getAttribute('data-key').slice(prefix.length);
+                        const raw = el.value;
+                        if (raw === '' && (field === 'ign' || field.startsWith('ign_'))) continue;
+                        const num = Number(raw);
+                        value[field] = (raw !== '' && isFinite(num)) ? num : raw;
+                    }
+                    payload = { key: key, value: value };
+                } else {
+                    const raw = inputEl.value;
+                    const num = Number(raw);
+                    payload = (raw !== '' && isFinite(num)) ? { key: key, value: num } : { key: key, value: raw };
+                }
                 const res = await fetch('/api/v1/app/values/write', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

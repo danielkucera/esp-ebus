@@ -25,6 +25,27 @@ TEST_CASE("HAProfile enum mapping is intact", "[ha_profile]") {
   REQUIRE(std::string(mode->key_value_pairs[0].second) == "on");
 }
 
+TEST_CASE("HAProfile weekday pairs cover Monday=0 and Monday=1 ranges",
+          "[ha_profile]") {
+  const HAProfile* mon0 = findHAProfile("select_enum_weekday_mon0");
+  REQUIRE(mon0 != nullptr);
+  REQUIRE(mon0->key_value_count == 7);
+  REQUIRE(mon0->default_key == 0);
+  REQUIRE(mon0->key_value_pairs[0].first == 0);
+  REQUIRE(mon0->key_value_pairs[6].first == 6);
+  REQUIRE(std::string(mon0->key_value_pairs[0].second) == "Mon");
+  REQUIRE(std::string(mon0->key_value_pairs[6].second) == "Sun");
+
+  const HAProfile* mon1 = findHAProfile("select_enum_weekday_mon1");
+  REQUIRE(mon1 != nullptr);
+  REQUIRE(mon1->key_value_count == 7);
+  REQUIRE(mon1->default_key == 1);
+  REQUIRE(mon1->key_value_pairs[0].first == 1);
+  REQUIRE(mon1->key_value_pairs[6].first == 7);
+  REQUIRE(std::string(mon1->key_value_pairs[0].second) == "Mon");
+  REQUIRE(std::string(mon1->key_value_pairs[6].second) == "Sun");
+}
+
 TEST_CASE("HAProfile lookup rejects unknown names", "[ha_profile]") {
   REQUIRE(findHAProfile("no_such_profile") == nullptr);
   REQUIRE(findHAProfile("") == nullptr);
